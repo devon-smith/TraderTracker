@@ -52,6 +52,10 @@ class StrategyConfig:
     # lead-lag null model (significance guard against synchronized-info false positives)
     leadlag_n_permutations: int = 200
     leadlag_significance: float = 0.95
+    # on-chain block-gap confirmation of surviving copy-chains
+    leadlag_max_block_gap: int = 5          # follower must land within N blocks of leader
+    leadlag_min_block_confirmations: int = 3  # across >= N shared markets
+    leadlag_max_block_gap_std: float = 2.0    # gap must be CONSISTENT (low spread)
 
 
 def _classify_row(f: pd.Series, c: StrategyConfig) -> tuple[str, str]:

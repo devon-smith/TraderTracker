@@ -60,7 +60,10 @@ tt candidates validate 2026-03-01 --platform polymarket   # walk-forward + shuff
 # 3. strategy detection (accounts -> recurring strategy templates)
 tt strategy classify  --platform polymarket               # archetype per wallet + reason
 tt strategy templates --platform polymarket               # (archetype, family) run by many accounts
-tt strategy leadlag   --platform polymarket               # copy/follow chains
+tt strategy recurrence <wallet>                           # same cycle repeated over time
+tt strategy leadlag   --platform polymarket               # copy chains (null-model filtered)
+tt strategy copychains --platform polymarket              # null model + on-chain block-gap + verdict
+tt strategy profitability 2026-03-01 --platform polymarket  # templates ranked by out-of-sample P&L
 
 # legacy in-memory helpers
 tt poly paper 0x... --slippage-bps 200                # paper-trade backtest
@@ -74,6 +77,15 @@ explainable archetype (`market_maker` / `scalper` / `accumulator` /
 templates run across accounts → lead-lag copy chains. Market families collapse the
 variable suffix of a slug (`btc-updown-5m-<ts>` → `btc-updown-5m`) so the same
 strategy run over and over is one row.
+
+**Copy-chain detection is guarded two ways** so shared reaction to public news
+isn't mistaken for copying: a within-market timestamp **permutation null model**,
+then **on-chain block-gap confirmation** (the follower must land a small,
+*consistent* block gap after the leader, repeatedly). Survivors carry a block-gap
+profile and a real follower-capture measurement (entry-price delta, time/block
+gap), aggregated to a per-leader empirical copyability verdict. Validated at
+≥500-wallet scale: synchronized reactors are rejected, only the planted
+consistent-block-gap copy-chain survives.
 
 Exploration notebooks: `analytics/notebooks/01_manifold_validation`,
 `02_polymarket_pnl`, `03_candidate_pool`, `04_strategy_detection`.

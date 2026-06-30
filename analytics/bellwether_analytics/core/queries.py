@@ -26,6 +26,7 @@ SELECT
     t.ts          AS ts,
     t.source::text AS source,
     t.is_taker    AS is_taker,
+    t.block_number AS block_number,
     m.resolution  AS resolution,
     m.resolved_at AS resolved_at
 FROM trade t

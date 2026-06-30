@@ -64,7 +64,7 @@ class OrderFilledListener:
             ts = block_ts_to_dt(self._block_ts(bn))
             li = int(lg["logIndex"], 16)
             txh = lg["transactionHash"]
-            rows.extend(normalize_order_filled(decoded, txh, li, ts))
+            rows.extend(normalize_order_filled(decoded, txh, li, ts, block_number=bn))
         return rows
 
     async def _persist(self, s, rows: list[dict], wcache: dict[str, int]) -> int:
@@ -88,6 +88,7 @@ class OrderFilledListener:
                     "notional": r["notional"],
                     "tx_hash": r["tx_hash"],
                     "log_index": r["log_index"],
+                    "block_number": r.get("block_number"),
                     "source": Source.onchain,
                     "is_taker": r.get("is_taker"),
                 }

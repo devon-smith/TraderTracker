@@ -151,3 +151,77 @@ def detect_followers_significant(
     if not rows:
         return pd.DataFrame(columns=cols)
     return pd.DataFrame(rows).sort_values("follow_events", ascending=False).reset_index(drop=True)
+
+
+def confirm_block_gaps(
+    trades: pd.DataFrame, pairs: pd.DataFrame, config: Optional[StrategyConfig] = None
+) -> pd.DataFrame:
+    """On-chain confirmation: for each (leader, follower) pair, measure the block
+    gap (follower's fill block - leader's fill block) per shared market with on-chain
+    block data. A pair is block_confirmed only when the gap is positive, small
+    (<= max_block_gap), CONSISTENT (std <= max_block_gap_std), and observed across
+    >= min_block_confirmations markets. Adds block_gap_median/std, n_block_confirmations,
+    block_confirmed. block_confirmed is NA when no on-chain block data exists."""
+    config = config or StrategyConfig()
+    out = pairs.copy()
+    out["block_gap_median"] = np.nan
+    out["block_gap_std"] = np.nan
+    out["n_block_confirmations"] = 0
+    out["block_confirmed"] = pd.NA
+    if out.empty or "block_number" not in trades.columns:
+        return out
+
+    df = trades[trades["block_number"].notna()].copy()
+    if df.empty:
+        return out  # no on-chain data -> block_confirmed stays NA
+    df["block_number"] = df["block_number"].astype("int64")
+
+    for i, row in out.iterrows():
+        leader, follower = row["leader"], row["follower"]
+        L = df[df["wallet"] == leader]
+        F = df[df["wallet"] == follower]
+        gaps = []
+        for market, lg in L.groupby("market"):
+            l_block = int(lg["block_number"].min())
+            fg = F[(F["market"] == market) & (F["block_number"] >= l_block)]
+            if fg.empty:
+                continue
+            gaps.append(int(fg["block_number"].min()) - l_block)
+        if not gaps:
+            continue
+        g = np.asarray(gaps, dtype=float)
+        med, std = float(np.median(g)), float(g.std())
+        out.at[i, "block_gap_median"] = med
+        out.at[i, "block_gap_std"] = std
+        out.at[i, "n_block_confirmations"] = len(gaps)
+        out.at[i, "block_confirmed"] = bool(
+            len(gaps) >= config.leadlag_min_block_confirmations
+            and 0 < med <= config.leadlag_max_block_gap
+            and std <= config.leadlag_max_block_gap_std
+        )
+    return out
+
+
+def confirmed_copy_chains(
+    trades: pd.DataFrame,
+    max_lag_seconds: float = 120.0,
+    min_events: int = 3,
+    same_side: bool = True,
+    config: Optional[StrategyConfig] = None,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """Full guarded pipeline: significance null model -> on-chain block-gap
+    confirmation. When on-chain block data is present, only block_confirmed pairs
+    are returned; otherwise the significance-filtered pairs pass through (block
+    confirmation pending an on-chain backfill)."""
+    sig = detect_followers_significant(
+        trades, max_lag_seconds=max_lag_seconds, min_events=min_events,
+        same_side=same_side, config=config, seed=seed,
+    )
+    if sig.empty:
+        return sig
+    confirmed = confirm_block_gaps(trades, sig, config=config)
+    has_block_data = "block_number" in trades.columns and trades["block_number"].notna().any()
+    if has_block_data:
+        return confirmed[confirmed["block_confirmed"] == True].reset_index(drop=True)  # noqa: E712
+    return confirmed

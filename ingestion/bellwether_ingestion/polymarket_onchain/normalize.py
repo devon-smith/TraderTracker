@@ -16,7 +16,7 @@ from .contracts import COLLATERAL_ASSET_ID
 DECIMALS = 6  # USDC and CTF outcome tokens both use 6 decimals on Polymarket.
 
 
-def _row(dedup_suffix, wallet, side, token, size, price, tx_hash, log_index, ts, is_taker):
+def _row(dedup_suffix, wallet, side, token, size, price, tx_hash, log_index, ts, is_taker, block_number):
     return {
         "dedup_key": f"onchain:{tx_hash}:{log_index}:{dedup_suffix}",
         "ts": ts,
@@ -31,6 +31,7 @@ def _row(dedup_suffix, wallet, side, token, size, price, tx_hash, log_index, ts,
         "notional": size * price,
         "tx_hash": tx_hash,
         "log_index": log_index,
+        "block_number": block_number,
         "source": "onchain",
         "is_taker": is_taker,  # taker is the aggressor; maker provides liquidity
     }
@@ -41,6 +42,7 @@ def normalize_order_filled(
     tx_hash: str,
     log_index: int,
     ts: dt.datetime,
+    block_number: Optional[int] = None,
 ) -> list[dict]:
     """Return maker + taker trade rows for one decoded OrderFilled event."""
     maker = decoded["maker"]
@@ -67,8 +69,10 @@ def normalize_order_filled(
     price = usdc_amt / share_amt  # both scaled by 10**DECIMALS -> ratio is the price
 
     return [
-        _row("m", maker, maker_side, token, size, price, tx_hash, log_index, ts, is_taker=False),
-        _row("t", taker, taker_side, token, size, price, tx_hash, log_index, ts, is_taker=True),
+        _row("m", maker, maker_side, token, size, price, tx_hash, log_index, ts,
+             is_taker=False, block_number=block_number),
+        _row("t", taker, taker_side, token, size, price, tx_hash, log_index, ts,
+             is_taker=True, block_number=block_number),
     ]
 
 

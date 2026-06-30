@@ -16,7 +16,12 @@ Pipeline:
 from .archetypes import STRATEGY_ARCHETYPES, StrategyConfig, classify
 from .clustering import cluster_wallets, compare_to_rules, recommend_thresholds
 from .features import extract_features
-from .leadlag import detect_followers, detect_followers_significant
+from .leadlag import (
+    confirm_block_gaps,
+    confirmed_copy_chains,
+    detect_followers,
+    detect_followers_significant,
+)
 from .profitability import archetype_pnl, rank_templates, template_pnl
 from .recurrence import market_family, strategy_templates, wallet_family_recurrence
 from .recurrence_time import cycle_motifs, periodicity, recurrence_in_time_report
@@ -31,6 +36,8 @@ __all__ = [
     "strategy_templates",
     "detect_followers",
     "detect_followers_significant",
+    "confirm_block_gaps",
+    "confirmed_copy_chains",
     "periodicity",
     "cycle_motifs",
     "recurrence_in_time_report",

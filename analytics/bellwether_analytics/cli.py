@@ -460,6 +460,45 @@ def strategy_profitability(
     console.print(table)
 
 
+@strategy_app.command("copychains")
+def strategy_copychains(
+    platform: str = typer.Option("polymarket"),
+    max_lag: float = typer.Option(120.0),
+    min_events: int = typer.Option(3),
+):
+    """Guarded copy-chains (null model + on-chain block-gap confirmation) + the
+    per-leader real-data trackability verdict."""
+    from bellwether_analytics.experiments import trackability_verdict
+    from bellwether_analytics.strategy import confirmed_copy_chains
+
+    trades, _ = _load_for_strategy(platform)
+    chains = confirmed_copy_chains(trades, max_lag_seconds=max_lag, min_events=min_events)
+    if chains.empty:
+        console.print("[yellow]No copy-chains survived the null model + block-gap confirmation.[/yellow]")
+        return
+    table = Table(title=f"Confirmed copy-chains ({platform})")
+    _columns(table, ("Leader", "left"), ("Follower", "left"), ("Follows", "right"),
+             ("p", "right"), ("Blk gap", "right"), ("Blk conf", "right"))
+    for _, r in chains.head(25).iterrows():
+        table.add_row(str(r["leader"])[:12] + "…", str(r["follower"])[:12] + "…",
+                      str(int(r["follow_events"])), f"{r.get('p_value', float('nan')):.3f}",
+                      f"{r.get('block_gap_median', float('nan')):.0f}",
+                      str(int(r.get("n_block_confirmations", 0))))
+    console.print(table)
+
+    verdict = trackability_verdict(trades, max_lag_seconds=max_lag, min_events=min_events)
+    if not verdict.empty:
+        console.print("\n[bold]Per-leader empirical copyability:[/bold]")
+        vt = Table()
+        _columns(vt, ("Leader", "left"), ("Followers", "right"), ("Score", "right"),
+                 ("Entry Δ", "right"), ("Time gap", "right"), ("Blk gap", "right"))
+        for _, r in verdict.head(25).iterrows():
+            vt.add_row(str(r["leader"])[:12] + "…", str(int(r["n_followers"])),
+                       f"{r['copyable_score']:.3f}", f"{r['median_entry_delta']:+.3f}",
+                       f"{r['median_time_gap_seconds']:.0f}s", f"{r['median_block_gap']:.0f}")
+        console.print(vt)
+
+
 @strategy_app.command("recurrence")
 def strategy_recurrence(
     wallet: str = typer.Argument(..., help="Wallet external id"),

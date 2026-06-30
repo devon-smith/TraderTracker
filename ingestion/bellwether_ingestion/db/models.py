@@ -120,6 +120,7 @@ class Trade(Base):
     notional: Mapped[Optional[float]] = mapped_column(Float)
     tx_hash: Mapped[Optional[str]] = mapped_column(String)
     log_index: Mapped[Optional[int]] = mapped_column(Integer)
+    block_number: Mapped[Optional[int]] = mapped_column(BigInteger)  # on-chain only
     source: Mapped[Source] = mapped_column(source_type, nullable=False)
     # Aggressor signal — only set for source='onchain' (taker is the aggressor).
     is_taker: Mapped[Optional[bool]] = mapped_column(Boolean)
