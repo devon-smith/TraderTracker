@@ -12,7 +12,7 @@ ingestion/    Python pkg `bellwether_ingestion` — IO: clients, normalizers, DB
   bellwether_ingestion/
     schemas.py            canonical Trade/Position/Activity (shared models)
     polymarket/ kalshi/ manifold/   per-venue clients
-    db/                   normalizers (pure) + asyncpg Database (pool/migrate/insert)
+    db/                   SQLAlchemy 2.x models, async session, Alembic, repo + normalizers
     collector.py          long-running collector service entrypoint
 analytics/    Python pkg `bellwether_analytics` — computation (depends on ingestion)
     wallet_scoring, specialization, paper_trade, kalshi_flow, cli (`tt`)
@@ -60,6 +60,9 @@ tt db init                      # apply migrations against $DATABASE_URL
 
 ## Migrations
 
-SQL files in `infra/db/migrations/*.sql`, applied in lexical order by
-`Database.apply_migrations` / `tt db init`. They run in a single transaction —
-must be idempotent, no continuous aggregates (use plain views).
+Alembic, under `ingestion/bellwether_ingestion/db/alembic/`. Models in `models.py`
+are the source of truth; the initial migration creates the TimescaleDB extension,
+the tables/enums (via `metadata.create_all`), and the hypertables. Apply with
+`tt db init` (programmatic `upgrade_head`) or `alembic upgrade head`. The
+time-series tables (`trade`, `position_event`, `event`) are hypertables on `ts`;
+`trade`/`position_event` use a `(dedup_key, ts)` PK for idempotent ingestion.

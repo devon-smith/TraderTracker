@@ -7,7 +7,11 @@ dependencies = [
     "httpx>=0.27",
     "pydantic>=2.6",
     "cryptography>=41",
+    "sqlalchemy[asyncio]>=2.0",
+    "alembic>=1.13",
     "asyncpg>=0.29",
+    "greenlet>=3.0",
+    "psycopg2-binary>=2.9",
 ]
 
 [build-system]
@@ -17,3 +21,10 @@ build-backend = "setuptools.build_meta"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["bellwether_ingestion*"]
+
+[tool.setuptools.package-data]
+bellwether_ingestion = [
+    "db/alembic/*.py",
+    "db/alembic/*.mako",
+    "db/alembic/versions/*.py",
+]

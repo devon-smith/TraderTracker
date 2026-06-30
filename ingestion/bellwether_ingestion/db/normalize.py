@@ -1,83 +1,137 @@
-"""Pure normalizers: raw platform records -> canonical `trade` rows.
+"""Pure normalizers: raw platform records -> canonical field dicts + dedup keys.
 
-These are deliberately side-effect-free so they can be unit-tested without a
-database. The dict keys match the columns of the canonical `trade` table in
-infra/db/migrations/0001_canonical_schema.sql.
+Side-effect-free so they unit-test without a database. Loaders (per-venue) resolve
+wallet/market external ids to surrogate ids and persist via ON CONFLICT.
 """
 
 from __future__ import annotations
 
+import datetime as dt
+import hashlib
 from typing import Optional
 
-from ..schemas import Trade
-
-# Single source of truth for the canonical trade column order (used by COPY/INSERT).
-canonical_trade_columns = (
-    "platform",
-    "wallet_id",
-    "market_id",
-    "condition_id",
-    "asset",
-    "side",
-    "size",
-    "price",
-    "notional",
-    "outcome",
-    "outcome_index",
-    "tx_hash",
-    "ts_epoch",
-)
+from ..schemas import Activity, Trade
 
 
-def normalize_polymarket_trade(t: Trade, platform: str = "polymarket") -> dict:
-    """Polymarket Data-API Trade -> canonical trade row."""
+def epoch_s_to_dt(ts: Optional[float]) -> dt.datetime:
+    return dt.datetime.fromtimestamp(int(ts or 0), tz=dt.timezone.utc)
+
+
+def epoch_ms_to_dt(ts: Optional[float]) -> dt.datetime:
+    return dt.datetime.fromtimestamp(int((ts or 0) / 1000), tz=dt.timezone.utc)
+
+
+# --------------------------------------------------------------------------- #
+# Dedup keys (stable, source-scoped)
+# --------------------------------------------------------------------------- #
+def manifold_dedup_key(bet_id: str) -> str:
+    return f"manifold:{bet_id}"
+
+
+def polymarket_api_dedup_key(t: Trade) -> str:
+    raw = "|".join(
+        str(x)
+        for x in (
+            t.proxyWallet,
+            t.conditionId,
+            t.asset,
+            t.side,
+            t.size,
+            t.price,
+            t.timestamp,
+            t.transactionHash,
+        )
+    )
+    return "pmapi:" + hashlib.sha1(raw.encode()).hexdigest()
+
+
+def onchain_dedup_key(tx_hash: str, log_index: int) -> str:
+    return f"onchain:{tx_hash}:{log_index}"
+
+
+# --------------------------------------------------------------------------- #
+# Manifold
+# --------------------------------------------------------------------------- #
+def manifold_market_fields(contract: dict) -> dict:
+    outcome_type = contract.get("outcomeType", "BINARY")
+    groups = contract.get("groupSlugs") or []
+    category = (groups[0] if groups else None) or outcome_type.lower()
+    resolution_time = contract.get("resolutionTime")
     return {
-        "platform": platform,
-        "wallet_id": t.proxyWallet,
-        "market_id": t.conditionId,
-        "condition_id": t.conditionId,
-        "asset": t.asset,
-        "side": (t.side or "").upper(),
-        "size": float(t.size),
-        "price": float(t.price),
-        "notional": float(t.size) * float(t.price),
-        "outcome": t.outcome,
-        "outcome_index": t.outcomeIndex,
-        "tx_hash": t.transactionHash,
-        "ts_epoch": int(t.timestamp),
+        "external_id": contract.get("id"),
+        "title": contract.get("question"),
+        "slug": contract.get("slug"),
+        "category": category,
+        "raw_category": outcome_type,
+        "created_at": epoch_ms_to_dt(contract.get("createdTime")),
+        "resolved_at": epoch_ms_to_dt(resolution_time) if resolution_time else None,
+        "resolution": contract.get("resolution"),
+        "is_multi_outcome": outcome_type not in ("BINARY", "PSEUDO_NUMERIC", "STONK"),
     }
 
 
-def _ms_to_s(ts: Optional[float]) -> int:
-    """Manifold timestamps are epoch milliseconds; canonical store uses seconds."""
-    return int((ts or 0) / 1000)
-
-
-def normalize_manifold_bet(b: dict, platform: str = "manifold") -> dict:
-    """Manifold bet -> canonical trade row.
-
-    Manifold bets are share purchases against a probability. We approximate:
-      - size  := |shares| (fallback to |amount|)
-      - price := probAfter (the post-trade probability ~ the share's marginal price)
-      - side  := BUY if amount >= 0 else SELL
-    These are approximations appropriate for a play-money prototype venue.
-    """
-    shares = b.get("shares")
-    amount = b.get("amount", 0) or 0
-    size = abs(float(shares)) if shares is not None else abs(float(amount))
-    price = float(b.get("probAfter", b.get("probBefore", 0.0)) or 0.0)
+def manifold_trade_fields(bet: dict) -> dict:
+    amount = float(bet.get("amount", 0) or 0)
+    shares = bet.get("shares")
+    size = abs(float(shares)) if shares is not None else abs(amount)
+    price = float(bet.get("probAfter", bet.get("probBefore", 0.0)) or 0.0)
     return {
-        "platform": platform,
-        "wallet_id": b.get("userId"),
-        "market_id": b.get("contractId"),
-        "condition_id": b.get("contractId"),
-        "asset": b.get("outcome"),
-        "side": "BUY" if float(amount) >= 0 else "SELL",
+        "dedup_key": manifold_dedup_key(bet["id"]),
+        "ts": epoch_ms_to_dt(bet.get("createdTime")),
+        "platform": "manifold",
+        "wallet_external": bet.get("userId"),
+        "market_external": bet.get("contractId"),
+        "side": "BUY" if amount >= 0 else "SELL",
+        "outcome": bet.get("outcome"),
         "size": size,
         "price": price,
         "notional": size * price,
-        "outcome": b.get("outcome"),
-        "outcome_index": None,
-        "tx_hash": b.get("id"),
-        "ts_epoch": _ms_to_s(b.get("createdTime")),
+        "tx_hash": bet.get("id"),
+        "log_index": None,
+        "source": "manifold_api",
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Polymarket Data API
+# --------------------------------------------------------------------------- #
+def polymarket_trade_fields(t: Trade) -> dict:
+    return {
+        "dedup_key": polymarket_api_dedup_key(t),
+        "ts": epoch_s_to_dt(t.timestamp),
+        "platform": "polymarket",
+        "wallet_external": t.proxyWallet,
+        "market_external": t.conditionId,
+        "side": (t.side or "").upper() or None,
+        "outcome": t.outcome,
+        "size": float(t.size),
+        "price": float(t.price),
+        "notional": float(t.size) * float(t.price),
+        "tx_hash": t.transactionHash,
+        "log_index": None,
+        "source": "data_api",
+    }
+
+
+_POSITION_EVENT_TYPES = {"SPLIT", "MERGE", "REDEEM", "CONVERSION", "REWARD"}
+
+
+def polymarket_activity_fields(a: Activity) -> Optional[dict]:
+    """Map a Polymarket /activity row to a position_event dict, or None if it's a
+    TRADE (trades come from /trades, not here)."""
+    etype = (a.type or "").upper()
+    if etype not in _POSITION_EVENT_TYPES:
+        return None
+    th = a.transactionHash or ""
+    return {
+        "dedup_key": f"pmact:{th}:{etype}:{a.asset}",
+        "ts": epoch_s_to_dt(a.timestamp),
+        "platform": "polymarket",
+        "wallet_external": a.proxyWallet,
+        "market_external": a.conditionId,
+        "event_type": etype,
+        "size": a.size,
+        "value": (a.size or 0) * (a.price or 0) if a.price is not None else None,
+        "tx_hash": a.transactionHash,
+        "log_index": None,
     }

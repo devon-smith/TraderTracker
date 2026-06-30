@@ -13,6 +13,4 @@ RUN pip install ./ingestion \
  && pip install --no-deps ./analytics \
  && pip install "typer>=0.12" "rich>=13.7" "python-dateutil>=2.9"
 
-COPY infra/db/migrations ./infra/db/migrations
-
 CMD ["python", "-m", "bellwether_ingestion.collector"]

@@ -1,38 +1,11 @@
-from bellwether_ingestion.db.normalize import (
-    canonical_trade_columns,
-    normalize_manifold_bet,
-    normalize_polymarket_trade,
-)
-from bellwether_ingestion.schemas import Trade
+import datetime as dt
+
+from bellwether_ingestion.db import normalize
+from bellwether_ingestion.schemas import Activity, Trade
 
 
-def test_normalize_polymarket_trade():
-    t = Trade(
-        proxyWallet="0xABC",
-        side="buy",
-        asset="tok1",
-        conditionId="cond1",
-        size=100,
-        price=0.4,
-        timestamp=1_700_000_000,
-        slug="fed-rates-january",
-        outcome="YES",
-        outcomeIndex=0,
-        transactionHash="0xhash",
-    )
-    row = normalize_polymarket_trade(t)
-    assert row["platform"] == "polymarket"
-    assert row["wallet_id"] == "0xABC"
-    assert row["market_id"] == "cond1"
-    assert row["side"] == "BUY"  # upper-cased
-    assert row["notional"] == 40.0
-    assert row["ts_epoch"] == 1_700_000_000
-    # Every canonical column is present.
-    assert set(canonical_trade_columns) <= set(row.keys())
-
-
-def test_normalize_manifold_bet_buy_and_sell():
-    buy = normalize_manifold_bet(
+def test_manifold_trade_fields_buy_sell_and_ts():
+    buy = normalize.manifold_trade_fields(
         {
             "id": "bet1",
             "userId": "u1",
@@ -44,13 +17,79 @@ def test_normalize_manifold_bet_buy_and_sell():
             "createdTime": 1_700_000_000_000,  # ms
         }
     )
+    assert buy["dedup_key"] == "manifold:bet1"
     assert buy["platform"] == "manifold"
+    assert buy["source"] == "manifold_api"
     assert buy["side"] == "BUY"
     assert buy["size"] == 50.0
     assert buy["price"] == 0.6
     assert buy["notional"] == 30.0
-    assert buy["ts_epoch"] == 1_700_000_000  # ms -> s
+    assert buy["wallet_external"] == "u1"
+    assert buy["market_external"] == "c1"
+    assert buy["ts"] == dt.datetime(2023, 11, 14, 22, 13, 20, tzinfo=dt.timezone.utc)
 
-    sell = normalize_manifold_bet({"userId": "u1", "contractId": "c1", "amount": -10, "probAfter": 0.5})
+    sell = normalize.manifold_trade_fields(
+        {"id": "b2", "userId": "u1", "contractId": "c1", "amount": -10, "probAfter": 0.5}
+    )
     assert sell["side"] == "SELL"
     assert sell["size"] == 10.0
+
+
+def test_manifold_market_fields_multi_outcome_and_resolution():
+    m = normalize.manifold_market_fields(
+        {
+            "id": "c1",
+            "question": "Who wins?",
+            "slug": "who-wins",
+            "outcomeType": "MULTIPLE_CHOICE",
+            "groupSlugs": ["politics", "us"],
+            "createdTime": 1_600_000_000_000,
+            "resolutionTime": 1_700_000_000_000,
+            "resolution": "YES",
+        }
+    )
+    assert m["external_id"] == "c1"
+    assert m["category"] == "politics"
+    assert m["raw_category"] == "MULTIPLE_CHOICE"
+    assert m["is_multi_outcome"] is True
+    assert m["resolution"] == "YES"
+    assert m["resolved_at"] is not None
+
+
+def test_polymarket_trade_fields_and_stable_dedup_key():
+    t = Trade(
+        proxyWallet="0xABC",
+        side="buy",
+        asset="tok1",
+        conditionId="cond1",
+        size=100,
+        price=0.4,
+        timestamp=1_700_000_000,
+        slug="fed-rates",
+        outcome="YES",
+        outcomeIndex=0,
+        transactionHash="0xhash",
+    )
+    row = normalize.polymarket_trade_fields(t)
+    assert row["platform"] == "polymarket"
+    assert row["source"] == "data_api"
+    assert row["side"] == "BUY"
+    assert row["notional"] == 40.0
+    assert row["wallet_external"] == "0xABC"
+    # dedup key is stable for identical inputs.
+    assert row["dedup_key"] == normalize.polymarket_trade_fields(t)["dedup_key"]
+    assert row["dedup_key"].startswith("pmapi:")
+
+
+def test_polymarket_activity_maps_only_position_events():
+    redeem = Activity(
+        proxyWallet="0xA", type="REDEEM", timestamp=1_700_000_000, asset="tok",
+        conditionId="cond1", size=10, price=1.0, transactionHash="0xtx",
+    )
+    row = normalize.polymarket_activity_fields(redeem)
+    assert row is not None
+    assert row["event_type"] == "REDEEM"
+    assert row["value"] == 10.0
+
+    trade = Activity(proxyWallet="0xA", type="TRADE", timestamp=1, conditionId="c")
+    assert normalize.polymarket_activity_fields(trade) is None

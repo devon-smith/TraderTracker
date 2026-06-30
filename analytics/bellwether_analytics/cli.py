@@ -11,7 +11,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Optional
 
 import typer
@@ -226,19 +225,11 @@ def kalshi_flow(
 
 @db_app.command("init")
 def db_init():
-    """Apply the canonical schema migrations to DATABASE_URL."""
-    from bellwether_ingestion.db import Database
+    """Apply the canonical schema migrations (Alembic) to DATABASE_URL."""
+    from bellwether_ingestion.db import upgrade_head
 
-    async def _run():
-        db = Database()
-        await db.connect()
-        try:
-            applied = await db.apply_migrations()
-            console.print(f"[green]Applied migrations:[/green] {', '.join(applied) or '(none found)'}")
-        finally:
-            await db.close()
-
-    asyncio.run(_run())
+    upgrade_head()
+    console.print("[green]Migrations applied (alembic upgrade head).[/green]")
 
 
 if __name__ == "__main__":
