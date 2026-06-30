@@ -10,11 +10,15 @@ Docs: https://docs.manifold.markets/api  — base: https://api.manifold.markets
 from __future__ import annotations
 
 import os
+import time
 from typing import Iterator, Optional
 
 import httpx
 
 DEFAULT_BASE = os.environ.get("MANIFOLD_API", "https://api.manifold.markets")
+
+# Transient statuses worth retrying (rate limit + upstream hiccups).
+_RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
 class ManifoldClient:
@@ -31,10 +35,24 @@ class ManifoldClient:
     def __exit__(self, *exc) -> None:
         self.close()
 
-    def _get(self, path: str, params: Optional[dict] = None):
+    def _get(self, path: str, params: Optional[dict] = None, max_retries: int = 5):
         params = {k: v for k, v in (params or {}).items() if v is not None}
-        resp = self._client.get(f"{self.base_url}{path}", params=params)
-        resp.raise_for_status()
+        url = f"{self.base_url}{path}"
+        last_exc: Optional[Exception] = None
+        for attempt in range(max_retries):
+            try:
+                resp = self._client.get(url, params=params)
+                if resp.status_code in _RETRY_STATUS:
+                    time.sleep(min(2**attempt * 0.5, 8.0))
+                    continue
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.TransportError as e:  # connection resets, timeouts
+                last_exc = e
+                time.sleep(min(2**attempt * 0.5, 8.0))
+        if last_exc:
+            raise last_exc
+        resp.raise_for_status()  # surface the last retryable HTTP error
         return resp.json()
 
     def bets(

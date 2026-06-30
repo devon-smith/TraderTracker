@@ -31,10 +31,12 @@ app = typer.Typer(help="Bellwether — prediction-market trader intelligence.", 
 poly = typer.Typer(help="Polymarket commands.")
 kalshi_app = typer.Typer(help="Kalshi commands.")
 manifold_app = typer.Typer(help="Manifold commands.")
+analyze_app = typer.Typer(help="Analytics over the canonical tables.")
 db_app = typer.Typer(help="Database commands.")
 app.add_typer(poly, name="poly")
 app.add_typer(kalshi_app, name="kalshi")
 app.add_typer(manifold_app, name="manifold")
+app.add_typer(analyze_app, name="analyze")
 app.add_typer(db_app, name="db")
 
 console = Console()
@@ -236,6 +238,61 @@ def manifold_load(
 
     n = run_load_user(identifier, max_pages=max_pages, max_bets=max_bets)
     console.print(f"[green]wrote {n} new trades[/green] for {identifier}")
+
+
+@analyze_app.command("rank")
+def analyze_rank(
+    platform: Optional[str] = typer.Option(None, help="manifold | polymarket | kalshi"),
+    config: Optional[str] = typer.Option(None, help="Path to a ranking YAML/TOML config"),
+    min_resolved_trades: int = typer.Option(1, help="Used when --config is not given"),
+    min_win_rate: float = typer.Option(0.0, help="Used when --config is not given"),
+    top: int = typer.Option(25),
+):
+    """Rank wallets from the canonical tables (performance + specialization)."""
+    from bellwether_analytics.core import (
+        RankConfig,
+        load_config,
+        load_trades_df,
+        performance_by_wallet,
+        rank,
+        specialization_by_wallet,
+    )
+
+    df = load_trades_df(platform=platform)
+    if df.empty:
+        console.print("[yellow]No trades found. Load some first (e.g. tt manifold load).[/yellow]")
+        return
+    perf = performance_by_wallet(df)
+    spec = specialization_by_wallet(df)
+    cfg = (
+        load_config(config)
+        if config
+        else RankConfig(min_resolved_trades=min_resolved_trades, min_win_rate=min_win_rate)
+    )
+    ranked = rank(perf, spec, cfg).head(top)
+
+    table = Table(title=f"Ranked wallets ({platform or 'all'})")
+    _columns(
+        table,
+        ("Wallet", "left"), ("Resolved", "right"), ("Win%", "right"),
+        ("PnL", "right"), ("ROI", "right"), ("HHI", "right"),
+        ("Top cat", "left"), ("Score", "right"),
+    )
+    for wallet, r in ranked.iterrows():
+        wr = r.get("win_rate")
+        roi = r.get("roi")
+        table.add_row(
+            str(wallet)[:12] + "…",
+            str(int(r.get("resolved_trade_count") or 0)),
+            f"{wr:.0%}" if wr == wr and wr is not None else "—",  # NaN-safe
+            f"{r.get('realized_pnl', float('nan')):,.0f}",
+            f"{roi:.0%}" if roi == roi and roi is not None else "—",
+            f"{r.get('hhi', float('nan')):.2f}",
+            str(r.get("top_category") or ""),
+            f"{r.get('score', float('nan')):.3f}",
+        )
+    console.print(table)
+    console.print(f"[dim]{len(ranked)} wallet(s) after filters.[/dim]")
 
 
 @db_app.command("init")

@@ -1,0 +1,14 @@
+# Candidate ranking config (Prompt 4 / Prompt 8). Copy to config/ranking.yaml
+# and tune. Thresholds filter; weights score the survivors.
+ranking:
+  # Filters
+  min_resolved_trades: 50      # trades on resolved markets
+  min_win_rate: 0.55           # share of winning resolved positions
+  min_specialization: 0.0      # HHI floor (0 = off; 0.5+ = concentrated)
+  min_realized_pnl: 0.0
+
+  # Score weights (survivors are sorted by the weighted score, desc)
+  w_win_rate: 0.4
+  w_pnl: 0.3
+  w_specialization: 0.3
+  pnl_norm: 10000.0            # P&L scale for the tanh-compressed P&L term
