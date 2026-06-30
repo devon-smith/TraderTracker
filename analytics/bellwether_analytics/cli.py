@@ -456,20 +456,21 @@ def strategy_leadlag(
     max_lag: float = typer.Option(120.0, help="Max seconds between leader and follower fill"),
     min_events: int = typer.Option(3),
 ):
-    """Detect copy/follow chains: wallets that trade just after another."""
-    from bellwether_analytics.strategy import detect_followers
+    """Detect copy/follow chains (null-model filtered: rejects synchronized reaction)."""
+    from bellwether_analytics.strategy import detect_followers_significant
 
     trades, _ = _load_for_strategy(platform)
-    pairs = detect_followers(trades, max_lag_seconds=max_lag, min_events=min_events)
+    pairs = detect_followers_significant(trades, max_lag_seconds=max_lag, min_events=min_events)
     if pairs.empty:
-        console.print("[yellow]No follow chains detected at these thresholds.[/yellow]")
+        console.print("[yellow]No significant copy chains (survived the permutation null model).[/yellow]")
         return
-    table = Table(title=f"Lead-lag copy chains ({platform})")
+    table = Table(title=f"Significant lead-lag copy chains ({platform})")
     _columns(table, ("Leader", "left"), ("Follower", "left"), ("Follows", "right"),
-             ("Markets", "right"), ("Follow %", "right"))
+             ("Null thr", "right"), ("p", "right"), ("Med gap", "right"))
     for _, r in pairs.head(25).iterrows():
         table.add_row(str(r["leader"])[:12] + "…", str(r["follower"])[:12] + "…",
-                      str(int(r["follow_events"])), str(int(r["n_markets"])), f"{r['follow_ratio']:.0%}")
+                      str(int(r["follow_events"])), f"{r['null_threshold']:.1f}",
+                      f"{r['p_value']:.3f}", f"{r['median_gap_seconds']:.0f}s")
     console.print(table)
 
 

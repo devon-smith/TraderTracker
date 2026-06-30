@@ -15,7 +15,7 @@ Pipeline:
 
 from .archetypes import STRATEGY_ARCHETYPES, StrategyConfig, classify
 from .features import extract_features
-from .leadlag import detect_followers
+from .leadlag import detect_followers, detect_followers_significant
 from .recurrence import market_family, strategy_templates, wallet_family_recurrence
 from .recurrence_time import cycle_motifs, periodicity, recurrence_in_time_report
 
@@ -28,6 +28,7 @@ __all__ = [
     "wallet_family_recurrence",
     "strategy_templates",
     "detect_followers",
+    "detect_followers_significant",
     "periodicity",
     "cycle_motifs",
     "recurrence_in_time_report",

@@ -49,6 +49,9 @@ class StrategyConfig:
     # temporal recurrence (in-time, within an account)
     recurrence_regular_threshold: float = 0.6
     recurrence_min_cycles: int = 3
+    # lead-lag null model (significance guard against synchronized-info false positives)
+    leadlag_n_permutations: int = 200
+    leadlag_significance: float = 0.95
 
 
 def _classify_row(f: pd.Series, c: StrategyConfig) -> tuple[str, str]:
