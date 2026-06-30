@@ -1,12 +1,12 @@
 """Paper-trade copy simulator.
 
-Replay a leader wallet's historical trades, apply a configurable execution latency and
-slippage model, and compute realized PnL on resolved trades.
+Replay a leader wallet's historical trades, apply a configurable execution latency
+and slippage model, and compute realized PnL on resolved trades.
 
 This is a backtest — it does NOT touch live markets and does NOT trade real funds.
-Use it to validate the latency/slippage benchmark called out in the feasibility study
-('if fills land within ~2s and slippage stays below the leader's edge, copy is viable;
-if >5s late or >3–5% slippage, pivot to signal-only').
+Use it to validate the latency/slippage benchmark called out in the feasibility
+study (Experiment A): if fills land within ~2s and slippage stays below the
+leader's edge, copy is viable; if >5s late or >3-5% slippage, pivot to signal-only.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from ..polymarket.data_api import Trade
+from bellwether_ingestion.schemas import Trade
 
 
 @dataclass
@@ -47,8 +47,7 @@ class PaperTradeSimulator:
     Parameters
     ----------
     slippage_bps:
-        Basis points of slippage applied to each copied fill (entry price worsened by
-        this fraction). 200 bps = 2%. Tune to match measured production latency.
+        Basis points of slippage applied to each copied fill. 200 bps = 2%.
     size_scale:
         Fraction of the leader's notional you'd take. 0.05 = 5%.
     min_leader_notional:
@@ -66,8 +65,6 @@ class PaperTradeSimulator:
         result = PaperResult(leader=leader)
         slippage = self.slippage_bps / 10_000.0
 
-        # Track copied positions per (conditionId, outcome) so we can realize PnL when
-        # the leader closes (a SELL on the opposite side of an earlier BUY).
         open_positions: dict[tuple[str, str | None], dict] = {}
 
         for t in sorted(trades, key=lambda x: x.timestamp):
@@ -79,7 +76,6 @@ class PaperTradeSimulator:
                 continue
 
             copy_size = t.size * self.size_scale
-            # Slippage hurts the copier: pay more on BUY, receive less on SELL.
             if t.side.upper() == "BUY":
                 exec_price = min(t.price * (1 + slippage), 1.0)
             else:

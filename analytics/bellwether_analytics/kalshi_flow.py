@@ -1,15 +1,15 @@
 """Anonymous order-flow aggregation for Kalshi.
 
-Kalshi's public feed never identifies the trader. The only honest 'smart money' signal
-is one-directional accumulation: per-market, per-side notional and VWAP. Large
-one-sided flow over a window is the threshold for further action — typically your own
-limit order, not a copy-trade (which is impossible without account-level data).
+Kalshi's public feed never identifies the trader. The only honest 'smart money'
+signal is one-directional accumulation: per-market, per-side notional and VWAP.
+Large one-sided flow over a window is the threshold for further action — typically
+your own limit order, not a copy-trade (which is impossible without account data).
 """
 
 from __future__ import annotations
 
 from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Iterable
 
 
@@ -47,8 +47,6 @@ class FlowAggregator:
 
     def __init__(self):
         self._flows: dict[str, MarketFlow] = {}
-        # Running VWAP accumulators kept separate so the public MarketFlow stays a
-        # plain dataclass for serialization.
         self._yes_px_qty: dict[str, float] = defaultdict(float)
         self._yes_qty: dict[str, float] = defaultdict(float)
         self._no_px_qty: dict[str, float] = defaultdict(float)
@@ -67,8 +65,6 @@ class FlowAggregator:
             taker_side = (t.get("taker_side") or "").lower()
             is_block = bool(t.get("is_block_trade", False))
 
-            # The taker side identifies which contract the taker bought. Notional
-            # attributed to that side captures aggressive one-directional buying.
             if taker_side == "yes":
                 notional = count * yes_price / 100.0
                 flow.yes_notional += notional

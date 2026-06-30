@@ -1,0 +1,22 @@
+[project]
+name = "bellwether-analytics"
+version = "0.2.0"
+description = "Bellwether analytics — scoring, specialization, paper-trade, and flow over canonical data."
+requires-python = ">=3.10"
+dependencies = [
+    "bellwether-ingestion",
+    "typer>=0.12",
+    "rich>=13.7",
+    "python-dateutil>=2.9",
+]
+
+[project.scripts]
+tt = "bellwether_analytics.cli:app"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["bellwether_analytics*"]

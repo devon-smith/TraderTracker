@@ -1,17 +1,17 @@
 """Score Polymarket wallets for 'smart money' filtering.
 
 Scoring is intentionally explainable: every component maps to a finding from the
-feasibility study (win-rate, trade count, P&L, category concentration). No black-box
-ranking; downstream callers can re-weight via WalletScore.weighted_score().
+feasibility study (win-rate, trade count, P&L, category concentration). No
+black-box ranking; downstream callers can re-weight via WalletScore.weighted_score().
 """
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import Iterable, Optional
 
-from .data_api import Position, Trade
+from bellwether_ingestion.schemas import Position, Trade
 
 
 @dataclass
@@ -38,11 +38,7 @@ class WalletScore:
         pnl_norm: float = 100_000.0,
         volume_norm: float = 1_000_000.0,
     ) -> float:
-        """Combine components into a single 0..1-ish score for ranking.
-
-        The norms are reference scales — a wallet with $100k P&L and $1M volume each
-        contribute 1.0 to their term; weights then mix the components.
-        """
+        """Combine components into a single 0..1-ish score for ranking."""
         wr = self.win_rate if self.win_rate is not None else 0.5
         pnl_term = max(min(self.total_pnl / pnl_norm, 1.0), -1.0)
         vol_term = min(self.total_volume / volume_norm, 1.0)
@@ -57,14 +53,14 @@ class WalletScore:
 def _resolve_category(p_or_t) -> str:
     """Best-effort category extraction from Position/Trade slug/title.
 
-    The Data API does not return a category field directly; we cluster by slug prefix
-    as a cheap proxy. Callers wanting true categories should join against Gamma `tags`.
+    The Data API does not return a category field directly; we cluster by slug
+    prefix as a cheap proxy. Callers wanting true categories should join against
+    Gamma `tags`.
     """
     slug = getattr(p_or_t, "slug", None) or ""
     if not slug:
         title = getattr(p_or_t, "title", None) or ""
         return (title.split(" ")[0] or "unknown").lower()
-    # slugs look like "will-fed-cut-rates-at-the-january-2026-meeting"; first token is signal.
     return slug.split("-")[0].lower() or "unknown"
 
 
@@ -81,14 +77,12 @@ def score_wallet(
     unrealized_pnl = sum(p.cashPnl for p in positions)
     total_pnl = realized_pnl + unrealized_pnl
 
-    # Win rate from positions: a resolved position has size==0 and a non-zero realized PnL,
-    # OR redeemable=True (resolved-favorable). This is a heuristic — true resolution requires
-    # joining against the market's `closed` status from Gamma.
+    # A resolved position has size==0 and a non-zero realized PnL. Heuristic — true
+    # resolution requires joining against the market's `closed` status from Gamma.
     resolved = [p for p in positions if p.size == 0 and p.realizedPnl != 0]
     wins = sum(1 for p in resolved if p.realizedPnl > 0)
     win_rate = (wins / len(resolved)) if resolved else None
 
-    # Category concentration from trade volume.
     cat_vol: dict[str, float] = defaultdict(float)
     for t in trades:
         cat_vol[_resolve_category(t)] += t.notional
@@ -124,8 +118,8 @@ def rank_wallets(
 ) -> list[WalletScore]:
     """Filter + rank wallets by the study's recommended thresholds.
 
-    Defaults match the widely-cited workflow: >=50 trades, >=55% win rate on resolved
-    positions, positive P&L. Tighten/relax via kwargs.
+    Defaults match the widely-cited workflow: >=50 trades, >=55% win rate on
+    resolved positions, positive P&L.
     """
     filtered = [
         s

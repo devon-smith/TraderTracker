@@ -7,8 +7,8 @@ Endpoints:
   GET /holders                   — top holders per market
   GET /value                     — total open position value
 
-Note: the `user` parameter accepts either the EOA or proxy address; responses key on
-the proxy (Gnosis Safe) wallet that actually holds positions.
+Note: the `user` parameter accepts either the EOA or proxy address; responses key
+on the proxy (Gnosis Safe) wallet that actually holds positions.
 """
 
 from __future__ import annotations
@@ -18,62 +18,10 @@ import time
 from typing import Iterator, Literal, Optional
 
 import httpx
-from pydantic import BaseModel, Field
+
+from ..schemas import Activity, Position, Trade
 
 DEFAULT_BASE = os.environ.get("POLYMARKET_DATA_API", "https://data-api.polymarket.com")
-
-
-class Trade(BaseModel):
-    proxyWallet: str
-    side: str
-    asset: str
-    conditionId: str
-    size: float
-    price: float
-    timestamp: int
-    title: Optional[str] = None
-    slug: Optional[str] = None
-    outcome: Optional[str] = None
-    outcomeIndex: Optional[int] = None
-    name: Optional[str] = None
-    pseudonym: Optional[str] = None
-    transactionHash: Optional[str] = None
-
-    @property
-    def notional(self) -> float:
-        return self.size * self.price
-
-
-class Position(BaseModel):
-    proxyWallet: Optional[str] = None
-    asset: Optional[str] = None
-    conditionId: Optional[str] = None
-    size: float
-    avgPrice: float = 0.0
-    initialValue: float = 0.0
-    currentValue: float = 0.0
-    cashPnl: float = 0.0
-    percentPnl: float = 0.0
-    realizedPnl: float = 0.0
-    curPrice: float = 0.0
-    redeemable: bool = False
-    title: Optional[str] = None
-    slug: Optional[str] = None
-    outcome: Optional[str] = None
-
-
-class Activity(BaseModel):
-    proxyWallet: Optional[str] = None
-    type: str
-    timestamp: int
-    asset: Optional[str] = None
-    conditionId: Optional[str] = None
-    size: Optional[float] = None
-    price: Optional[float] = None
-    side: Optional[str] = None
-    transactionHash: Optional[str] = None
-    title: Optional[str] = None
-    slug: Optional[str] = None
 
 
 class DataAPIClient:
@@ -86,7 +34,7 @@ class DataAPIClient:
         client: Optional[httpx.Client] = None,
     ):
         self.base_url = base_url.rstrip("/")
-        self._client = client or httpx.Client(timeout=timeout, headers={"User-Agent": "tradertracker/0.1"})
+        self._client = client or httpx.Client(timeout=timeout, headers={"User-Agent": "bellwether/0.2"})
 
     def close(self) -> None:
         self._client.close()
@@ -99,7 +47,6 @@ class DataAPIClient:
 
     def _get(self, path: str, params: dict) -> list[dict]:
         url = f"{self.base_url}{path}"
-        # Strip None values so the API doesn't reject them as bad input.
         params = {k: v for k, v in params.items() if v is not None}
         resp = self._client.get(url, params=params)
         if resp.status_code == 429:

@@ -10,7 +10,7 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Iterable
 
-from ..polymarket.data_api import Trade
+from bellwether_ingestion.schemas import Trade
 
 
 def _category(t: Trade) -> str:
@@ -22,7 +22,9 @@ def _category(t: Trade) -> str:
 
 
 def category_breakdown(trades: Iterable[Trade]) -> list[dict]:
-    by_cat: dict[str, dict] = defaultdict(lambda: {"trades": 0, "volume": 0.0, "buy_volume": 0.0, "sell_volume": 0.0})
+    by_cat: dict[str, dict] = defaultdict(
+        lambda: {"trades": 0, "volume": 0.0, "buy_volume": 0.0, "sell_volume": 0.0}
+    )
     for t in trades:
         cat = _category(t)
         bucket = by_cat[cat]

@@ -1,4 +1,4 @@
-"""TraderTracker CLI.
+"""Bellwether CLI (`tt`).
 
   tt poly leaderboard            list top Polymarket wallets
   tt poly wallet <addr>          summarize a wallet (trades + positions + score)
@@ -6,26 +6,36 @@
   tt poly categories <addr>      category breakdown for a wallet
   tt poly paper <addr>           paper-trade replay of a leader's history
   tt kalshi flow [--ticker T]    aggregate anonymous flow across markets
+  tt db init                     apply canonical schema migrations
 """
 
 from __future__ import annotations
 
-import json
+import asyncio
 from typing import Optional
 
 import typer
 from rich.console import Console
 from rich.table import Table
 
-from .analytics import PaperTradeSimulator, category_breakdown
-from .kalshi import FlowAggregator, KalshiClient
-from .polymarket import DataAPIClient, GammaClient, rank_wallets, score_wallet
+from bellwether_ingestion.kalshi import KalshiClient
+from bellwether_ingestion.polymarket import DataAPIClient, GammaClient
 
-app = typer.Typer(help="TraderTracker — prediction-market wallet tracking.", no_args_is_help=True)
+from . import (
+    FlowAggregator,
+    PaperTradeSimulator,
+    category_breakdown,
+    rank_wallets,
+    score_wallet,
+)
+
+app = typer.Typer(help="Bellwether — prediction-market trader intelligence.", no_args_is_help=True)
 poly = typer.Typer(help="Polymarket commands.")
 kalshi_app = typer.Typer(help="Kalshi commands.")
+db_app = typer.Typer(help="Database commands.")
 app.add_typer(poly, name="poly")
 app.add_typer(kalshi_app, name="kalshi")
+app.add_typer(db_app, name="db")
 
 console = Console()
 
@@ -39,11 +49,8 @@ def poly_leaderboard(
     with GammaClient() as g:
         entries = g.leaderboard(window=window, limit=limit)
     table = Table(title=f"Polymarket leaderboard — {window}")
-    table.add_column("Rank", justify="right")
-    table.add_column("Wallet")
-    table.add_column("Username")
-    table.add_column("Volume", justify="right")
-    table.add_column("PnL", justify="right")
+    for col, just in [("Rank", "right"), ("Wallet", "left"), ("Username", "left"), ("Volume", "right"), ("PnL", "right")]:
+        table.add_column(col, justify=just)
     for e in entries:
         table.add_row(
             str(e.rank or ""),
@@ -107,14 +114,8 @@ def poly_rank(
     )
 
     table = Table(title="Ranked wallets")
-    table.add_column("Wallet")
-    table.add_column("Trades", justify="right")
-    table.add_column("Volume", justify="right")
-    table.add_column("PnL", justify="right")
-    table.add_column("Win%", justify="right")
-    table.add_column("Top cat")
-    table.add_column("Concen.", justify="right")
-    table.add_column("Score", justify="right")
+    for col, just in [("Wallet", "left"), ("Trades", "right"), ("Volume", "right"), ("PnL", "right"), ("Win%", "right"), ("Top cat", "left"), ("Concen.", "right"), ("Score", "right")]:
+        table.add_column(col, justify=just)
     for s in ranked:
         table.add_row(
             s.wallet[:10] + "…",
@@ -142,11 +143,8 @@ def poly_categories(
         trades = list(d.iter_trades(user=address, max_pages=pages))
     rows = category_breakdown(trades)
     table = Table(title=f"Category breakdown for {address[:10]}…")
-    table.add_column("Category")
-    table.add_column("Trades", justify="right")
-    table.add_column("Volume", justify="right")
-    table.add_column("Share", justify="right")
-    table.add_column("Net buy", justify="right")
+    for col, just in [("Category", "left"), ("Trades", "right"), ("Volume", "right"), ("Share", "right"), ("Net buy", "right")]:
+        table.add_column(col, justify=just)
     for r in rows[:25]:
         table.add_row(
             r["category"],
@@ -192,18 +190,11 @@ def kalshi_flow(
     """Aggregate anonymous Kalshi trades into per-market flow imbalances."""
     agg = FlowAggregator()
     with KalshiClient() as k:
-        agg.update(
-            k.iter_trades(ticker=ticker, min_ts=min_ts, max_ts=max_ts, max_pages=pages)
-        )
+        agg.update(k.iter_trades(ticker=ticker, min_ts=min_ts, max_ts=max_ts, max_pages=pages))
     rows = agg.top_imbalances(n=top, min_notional=min_notional)
     table = Table(title="Kalshi flow imbalances")
-    table.add_column("Ticker")
-    table.add_column("Trades", justify="right")
-    table.add_column("Total $", justify="right")
-    table.add_column("YES $", justify="right")
-    table.add_column("NO $", justify="right")
-    table.add_column("Imbalance", justify="right")
-    table.add_column("Block $", justify="right")
+    for col, just in [("Ticker", "left"), ("Trades", "right"), ("Total $", "right"), ("YES $", "right"), ("NO $", "right"), ("Imbalance", "right"), ("Block $", "right")]:
+        table.add_column(col, justify=just)
     for f in rows:
         table.add_row(
             f.ticker,
@@ -215,6 +206,23 @@ def kalshi_flow(
             f"{f.block_trade_notional:,.0f}",
         )
     console.print(table)
+
+
+@db_app.command("init")
+def db_init():
+    """Apply the canonical schema migrations to DATABASE_URL."""
+    from bellwether_ingestion.db import Database
+
+    async def _run():
+        db = Database()
+        await db.connect()
+        try:
+            applied = await db.apply_migrations()
+            console.print(f"[green]Applied migrations:[/green] {', '.join(applied) or '(none found)'}")
+        finally:
+            await db.close()
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

@@ -23,11 +23,7 @@ DEFAULT_BASE = os.environ.get("KALSHI_BASE_URL", "https://api.elections.kalshi.c
 
 
 class KalshiClient:
-    """Synchronous Kalshi client.
-
-    Auth is optional — public endpoints do not require it. Pass `api_key_id` and either
-    `private_key_pem` (PEM bytes) or `private_key_path` to sign requests.
-    """
+    """Synchronous Kalshi client. Auth is optional — public endpoints don't need it."""
 
     def __init__(
         self,
@@ -49,7 +45,7 @@ class KalshiClient:
                 with open(path, "rb") as f:
                     self._private_key = serialization.load_pem_private_key(f.read(), password=None)
 
-        self._client = httpx.Client(timeout=timeout, headers={"User-Agent": "tradertracker/0.1"})
+        self._client = httpx.Client(timeout=timeout, headers={"User-Agent": "bellwether/0.2"})
 
     def close(self) -> None:
         self._client.close()
@@ -64,7 +60,6 @@ class KalshiClient:
         if not self._private_key or not self.api_key_id:
             return {}
         ts_ms = str(int(time.time() * 1000))
-        # Kalshi signs over the request path only (no query string, no body).
         message = f"{ts_ms}{method.upper()}{path}".encode()
         signature = self._private_key.sign(
             message,
@@ -99,13 +94,7 @@ class KalshiClient:
         cursor: Optional[str] = None,
     ) -> dict:
         """Public anonymized trade feed. No account info is ever attached."""
-        params = {
-            "ticker": ticker,
-            "min_ts": min_ts,
-            "max_ts": max_ts,
-            "limit": limit,
-            "cursor": cursor,
-        }
+        params = {"ticker": ticker, "min_ts": min_ts, "max_ts": max_ts, "limit": limit, "cursor": cursor}
         params = {k: v for k, v in params.items() if v is not None}
         return self._request("GET", "/markets/trades", params=params)
 

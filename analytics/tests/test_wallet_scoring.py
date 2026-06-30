@@ -1,5 +1,5 @@
-from tradertracker.polymarket.data_api import Position, Trade
-from tradertracker.polymarket.wallet_scoring import rank_wallets, score_wallet
+from bellwether_analytics.wallet_scoring import rank_wallets, score_wallet
+from bellwether_ingestion.schemas import Position, Trade
 
 
 def _trade(slug: str, size: float, price: float, side: str = "BUY", ts: int = 0) -> Trade:
@@ -18,12 +18,7 @@ def _trade(slug: str, size: float, price: float, side: str = "BUY", ts: int = 0)
 
 
 def _position(size: float, realized: float, redeemable: bool = False) -> Position:
-    return Position(
-        size=size,
-        realizedPnl=realized,
-        cashPnl=0.0,
-        redeemable=redeemable,
-    )
+    return Position(size=size, realizedPnl=realized, cashPnl=0.0, redeemable=redeemable)
 
 
 def test_score_wallet_basic_aggregation():
@@ -32,20 +27,14 @@ def test_score_wallet_basic_aggregation():
         _trade("fed-rates-march", 200, 0.50),
         _trade("nfl-week-12", 50, 0.30),
     ]
-    positions = [
-        _position(0, 100),   # resolved winner
-        _position(0, -25),   # resolved loser
-        _position(50, 0),    # open
-    ]
+    positions = [_position(0, 100), _position(0, -25), _position(50, 0)]
     s = score_wallet("0xA", trades, positions)
     assert s.trade_count == 3
-    # 100*.4 + 200*.5 + 50*.3 = 40 + 100 + 15 = 155
     assert round(s.total_volume, 2) == 155.0
     assert s.realized_pnl == 75.0
     assert s.resolved_positions == 2
     assert s.win_rate == 0.5
     assert s.top_category == "fed"
-    # "fed-*" volume = 140 / 155 ≈ 0.903
     assert 0.90 <= s.category_concentration <= 0.91
     assert s.open_positions == 1
 

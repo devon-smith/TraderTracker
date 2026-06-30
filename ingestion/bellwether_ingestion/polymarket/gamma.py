@@ -25,7 +25,7 @@ class LeaderboardEntry(BaseModel):
 class GammaClient:
     def __init__(self, base_url: str = DEFAULT_BASE, timeout: float = 20.0):
         self.base_url = base_url.rstrip("/")
-        self._client = httpx.Client(timeout=timeout, headers={"User-Agent": "tradertracker/0.1"})
+        self._client = httpx.Client(timeout=timeout, headers={"User-Agent": "bellwether/0.2"})
 
     def close(self) -> None:
         self._client.close()
@@ -43,13 +43,8 @@ class GammaClient:
         resp.raise_for_status()
         return resp.json()
 
-    def leaderboard(
-        self,
-        window: str = "all",
-        limit: int = 100,
-    ) -> list[LeaderboardEntry]:
-        """Fetch top wallets. `window` is one of: 'day','week','month','all' (per Gamma docs)."""
-        # Endpoint shape: /leaderboard?window=<>&limit=<>. Server returns either a list or {data: [...]}.
+    def leaderboard(self, window: str = "all", limit: int = 100) -> list[LeaderboardEntry]:
+        """Fetch top wallets. `window` is one of: 'day','week','month','all'."""
         raw = self._get("/leaderboard", {"window": window, "limit": limit})
         if isinstance(raw, dict) and "data" in raw:
             raw = raw["data"]
