@@ -33,6 +33,23 @@ WHERE (:platform IS NULL OR t.platform = CAST(:platform AS platform_enum))
 """
 
 
+_EVENTS_SQL = """
+SELECT
+    w.external_id     AS wallet,
+    m.external_id     AS market,
+    m.category        AS category,
+    pe.event_type::text AS event_type,
+    pe.size           AS size,
+    pe.value          AS value,
+    pe.ts             AS ts
+FROM position_event pe
+LEFT JOIN market m ON m.id = pe.market_id
+LEFT JOIN wallet w ON w.id = pe.wallet_id
+WHERE (:platform IS NULL OR pe.platform = CAST(:platform AS platform_enum))
+  AND (:wallet IS NULL OR w.external_id = :wallet)
+"""
+
+
 def load_trades_df(
     dsn: Optional[str] = None,
     platform: Optional[str] = None,
@@ -46,6 +63,25 @@ def load_trades_df(
                 conn,
                 params={"platform": platform, "wallet": wallet_external},
                 parse_dates=["ts", "resolved_at"],
+            )
+    finally:
+        engine.dispose()
+    return df
+
+
+def load_events_df(
+    dsn: Optional[str] = None,
+    platform: Optional[str] = None,
+    wallet_external: Optional[str] = None,
+) -> pd.DataFrame:
+    engine = create_engine(sync_dsn(dsn))
+    try:
+        with engine.connect() as conn:
+            df = pd.read_sql(
+                text(_EVENTS_SQL),
+                conn,
+                params={"platform": platform, "wallet": wallet_external},
+                parse_dates=["ts"],
             )
     finally:
         engine.dispose()

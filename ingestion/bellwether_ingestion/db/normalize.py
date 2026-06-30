@@ -113,25 +113,42 @@ def polymarket_trade_fields(t: Trade) -> dict:
     }
 
 
-_POSITION_EVENT_TYPES = {"SPLIT", "MERGE", "REDEEM", "CONVERSION", "REWARD"}
+# Raw Data-API activity type -> canonical PositionEventType. Rebates/yield are all
+# positive USDC income, folded into REWARD (the enum stays stable).
+_EVENT_TYPE_MAP = {
+    "SPLIT": "SPLIT",
+    "MERGE": "MERGE",
+    "REDEEM": "REDEEM",
+    "CONVERSION": "CONVERSION",
+    "REWARD": "REWARD",
+    "MAKER_REBATE": "REWARD",
+    "TAKER_REBATE": "REWARD",
+    "YIELD": "REWARD",
+}
 
 
 def polymarket_activity_fields(a: Activity) -> Optional[dict]:
     """Map a Polymarket /activity row to a position_event dict, or None if it's a
-    TRADE (trades come from /trades, not here)."""
+    TRADE (trades come from /trades). `value` is the USDC leg (usdcSize)."""
     etype = (a.type or "").upper()
-    if etype not in _POSITION_EVENT_TYPES:
+    canonical = _EVENT_TYPE_MAP.get(etype)
+    if canonical is None:
         return None
-    th = a.transactionHash or ""
+    usdc = a.usdcSize if a.usdcSize is not None else ((a.size or 0) * (a.price or 0))
+    # Activity rows frequently lack a tx hash, so hash the identifying fields
+    # (including timestamp) to avoid dedup collisions.
+    key_raw = "|".join(
+        str(x) for x in (etype, a.conditionId, a.timestamp, usdc, a.outcome, a.asset)
+    )
     return {
-        "dedup_key": f"pmact:{th}:{etype}:{a.asset}",
+        "dedup_key": "pmact:" + hashlib.sha1(key_raw.encode()).hexdigest(),
         "ts": epoch_s_to_dt(a.timestamp),
         "platform": "polymarket",
         "wallet_external": a.proxyWallet,
-        "market_external": a.conditionId,
-        "event_type": etype,
+        "market_external": a.conditionId or None,
+        "event_type": canonical,
         "size": a.size,
-        "value": (a.size or 0) * (a.price or 0) if a.price is not None else None,
+        "value": usdc,
         "tx_hash": a.transactionHash,
         "log_index": None,
     }

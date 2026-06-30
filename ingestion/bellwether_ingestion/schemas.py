@@ -58,8 +58,10 @@ class Activity(BaseModel):
     asset: Optional[str] = None
     conditionId: Optional[str] = None
     size: Optional[float] = None
+    usdcSize: Optional[float] = None  # USDC value (the cash leg of the event)
     price: Optional[float] = None
     side: Optional[str] = None
+    outcome: Optional[str] = None
     transactionHash: Optional[str] = None
     title: Optional[str] = None
     slug: Optional[str] = None

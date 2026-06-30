@@ -1,5 +1,6 @@
 import datetime as dt
 
+import pytest
 from bellwether_ingestion.db import normalize
 from bellwether_ingestion.schemas import Activity, Trade
 
@@ -81,15 +82,20 @@ def test_polymarket_trade_fields_and_stable_dedup_key():
     assert row["dedup_key"].startswith("pmapi:")
 
 
-def test_polymarket_activity_maps_only_position_events():
+def test_polymarket_activity_uses_usdc_and_maps_income_types():
     redeem = Activity(
         proxyWallet="0xA", type="REDEEM", timestamp=1_700_000_000, asset="tok",
-        conditionId="cond1", size=10, price=1.0, transactionHash="0xtx",
+        conditionId="cond1", size=33828.16, usdcSize=33828.16, price=0,
     )
     row = normalize.polymarket_activity_fields(redeem)
     assert row is not None
     assert row["event_type"] == "REDEEM"
-    assert row["value"] == 10.0
+    assert row["value"] == pytest.approx(33828.16)  # usdcSize, not size*price(=0)
 
+    # rebate/yield income folds into REWARD
+    rebate = Activity(proxyWallet="0xA", type="MAKER_REBATE", timestamp=2, size=3.3, usdcSize=3.3)
+    assert normalize.polymarket_activity_fields(rebate)["event_type"] == "REWARD"
+
+    # TRADE rows are not position events (they come from /trades)
     trade = Activity(proxyWallet="0xA", type="TRADE", timestamp=1, conditionId="c")
     assert normalize.polymarket_activity_fields(trade) is None
