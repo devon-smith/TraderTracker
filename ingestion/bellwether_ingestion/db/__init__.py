@@ -2,8 +2,10 @@ from . import normalize, repo
 from .migrate import downgrade_base, upgrade_head
 from .models import (
     Base,
+    CandidateScore,
     Event,
     IngestionRun,
+    KalshiFlow,
     Market,
     Platform,
     PositionEvent,
@@ -21,8 +23,10 @@ __all__ = [
     "upgrade_head",
     "downgrade_base",
     "Base",
+    "CandidateScore",
     "Event",
     "IngestionRun",
+    "KalshiFlow",
     "Market",
     "Platform",
     "PositionEvent",

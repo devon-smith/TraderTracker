@@ -32,11 +32,13 @@ poly = typer.Typer(help="Polymarket commands.")
 kalshi_app = typer.Typer(help="Kalshi commands.")
 manifold_app = typer.Typer(help="Manifold commands.")
 analyze_app = typer.Typer(help="Analytics over the canonical tables.")
+candidates_app = typer.Typer(help="Candidate pool + validation (Phase 3).")
 db_app = typer.Typer(help="Database commands.")
 app.add_typer(poly, name="poly")
 app.add_typer(kalshi_app, name="kalshi")
 app.add_typer(manifold_app, name="manifold")
 app.add_typer(analyze_app, name="analyze")
+app.add_typer(candidates_app, name="candidates")
 app.add_typer(db_app, name="db")
 
 console = Console()
@@ -318,6 +320,62 @@ def analyze_rank(
         )
     console.print(table)
     console.print(f"[dim]{len(ranked)} wallet(s) after filters.[/dim]")
+
+
+@candidates_app.command("build")
+def candidates_build(
+    platform: str = typer.Option("polymarket", help="manifold | polymarket"),
+    min_resolved_trades: int = typer.Option(50),
+    min_win_rate: float = typer.Option(0.55),
+    target_size: int = typer.Option(500),
+    persist: bool = typer.Option(True, help="Upsert into candidate_score"),
+    top: int = typer.Option(25),
+):
+    """Build (and persist) the ranked candidate pool from the canonical tables."""
+    from bellwether_analytics.candidates import PoolConfig, build_pool, persist_pool
+    from bellwether_analytics.core import load_events_df, load_trades_df
+
+    tr = load_trades_df(platform=platform)
+    ev = load_events_df(platform=platform)
+    if tr.empty:
+        console.print("[yellow]No trades loaded for this platform.[/yellow]")
+        return
+    cfg = PoolConfig(min_resolved_trades=min_resolved_trades, min_win_rate=min_win_rate, target_size=target_size)
+    pool = build_pool(tr, ev, cfg)
+    if pool.empty:
+        console.print("[yellow]No wallets passed the filters. Loosen thresholds or load more data.[/yellow]")
+        return
+    if persist:
+        n = persist_pool(pool, platform)
+        console.print(f"[green]persisted {n} candidate scores[/green]")
+
+    table = Table(title=f"Candidate pool ({platform}) — top {top}")
+    _columns(table, ("Wallet", "left"), ("Resolved", "right"), ("Win%", "right"),
+             ("PnL", "right"), ("HHI", "right"), ("Score", "right"))
+    for wallet, r in pool.head(top).iterrows():
+        wr = r.get("win_rate")
+        table.add_row(
+            str(wallet)[:12] + "…",
+            str(int(r.get("resolved_trade_count") or 0)),
+            f"{wr:.0%}" if wr == wr and wr is not None else "—",
+            f"{r.get('realized_pnl', float('nan')):,.0f}",
+            f"{r.get('hhi', float('nan')):.2f}",
+            f"{r.get('score', float('nan')):.3f}",
+        )
+    console.print(table)
+
+
+@candidates_app.command("validate")
+def candidates_validate(
+    split_ts: str = typer.Argument(..., help="ISO timestamp, e.g. 2026-03-01"),
+    platform: str = typer.Option("polymarket"),
+):
+    """Walk-forward out-of-sample validation + shuffled-label control."""
+    from bellwether_analytics.candidates import walk_forward
+    from bellwether_analytics.core import load_trades_df
+
+    tr = load_trades_df(platform=platform)
+    console.print_json(data=walk_forward(tr, split_ts=split_ts))
 
 
 @db_app.command("init")

@@ -35,7 +35,6 @@ pytestmark = pytest.mark.skipif(
 def test_schema_hypertables_dedup_and_idempotency():
     from bellwether_ingestion.db import (
         Trade,
-        downgrade_base,
         make_engine,
         make_sessionmaker,
         repo,
@@ -44,8 +43,12 @@ def test_schema_hypertables_dedup_and_idempotency():
     from sqlalchemy import insert, text
     from sqlalchemy.exc import IntegrityError
 
-    downgrade_base()  # clean slate
+    # Non-destructive: ensure schema is present and use a unique test-only key
+    # namespace so running against a populated DB doesn't wipe data.
     upgrade_head()
+    TEST_WALLET = "itest-wallet"
+    TEST_MARKET = "itest-market"
+    TEST_DEDUP = "itest:dedup:1"
 
     async def _run():
         engine = make_engine(DSN)
@@ -59,20 +62,20 @@ def test_schema_hypertables_dedup_and_idempotency():
                 names = {r[0] for r in rows.all()}
                 assert {"trade", "position_event", "event"} <= names
 
-                wid = await repo.upsert_wallet(s, "manifold", "u-test")
+                wid = await repo.upsert_wallet(s, "manifold", TEST_WALLET)
                 mid = await repo.upsert_market(
                     s,
                     "manifold",
-                    {"external_id": "m-test", "title": "t", "category": "c", "is_multi_outcome": False},
+                    {"external_id": TEST_MARKET, "title": "t", "category": "c", "is_multi_outcome": False},
                 )
                 await s.commit()
 
                 # upsert is idempotent: same external id returns same surrogate id
-                wid2 = await repo.upsert_wallet(s, "manifold", "u-test")
+                wid2 = await repo.upsert_wallet(s, "manifold", TEST_WALLET)
                 assert wid == wid2
 
                 row = {
-                    "dedup_key": "itest:1",
+                    "dedup_key": TEST_DEDUP,
                     "ts": dt.datetime(2024, 1, 1, tzinfo=dt.timezone.utc),
                     "platform": "manifold",
                     "wallet_id": wid,
@@ -100,6 +103,11 @@ def test_schema_hypertables_dedup_and_idempotency():
                     await s.rollback()
                     raised = True
                 assert raised
+                # cleanup: remove only this test's rows (non-destructive)
+                await s.execute(text("DELETE FROM trade WHERE dedup_key=:k"), {"k": TEST_DEDUP})
+                await s.execute(text("DELETE FROM market WHERE external_id=:m"), {"m": TEST_MARKET})
+                await s.execute(text("DELETE FROM wallet WHERE external_id=:w"), {"w": TEST_WALLET})
+                await s.commit()
             return n1, n2
         finally:
             await engine.dispose()

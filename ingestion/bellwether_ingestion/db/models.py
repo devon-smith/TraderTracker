@@ -175,5 +175,36 @@ class IngestionRun(Base):
     error: Mapped[Optional[str]] = mapped_column(Text)
 
 
+class CandidateScore(Base):
+    """Derived per-wallet ranking (written by the analytics candidate pool)."""
+
+    __tablename__ = "candidate_score"
+    platform: Mapped[Platform] = mapped_column(platform_type, primary_key=True)
+    wallet_id: Mapped[str] = mapped_column(String, primary_key=True)  # external id
+    trade_count: Mapped[Optional[int]] = mapped_column(Integer)
+    total_volume: Mapped[Optional[float]] = mapped_column(Float)
+    total_pnl: Mapped[Optional[float]] = mapped_column(Float)
+    win_rate: Mapped[Optional[float]] = mapped_column(Float)
+    resolved_positions: Mapped[Optional[int]] = mapped_column(Integer)
+    top_category: Mapped[Optional[str]] = mapped_column(String)
+    concentration: Mapped[Optional[float]] = mapped_column(Float)
+    score: Mapped[Optional[float]] = mapped_column(Float)
+    computed_ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class KalshiFlow(Base):
+    """Derived per-market anonymous flow snapshot (Kalshi; Phase 5)."""
+
+    __tablename__ = "kalshi_flow"
+    ticker: Mapped[str] = mapped_column(String, primary_key=True)
+    window_end: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    yes_notional: Mapped[Optional[float]] = mapped_column(Float)
+    no_notional: Mapped[Optional[float]] = mapped_column(Float)
+    imbalance: Mapped[Optional[float]] = mapped_column(Float)
+    block_notional: Mapped[Optional[float]] = mapped_column(Float)
+    window_start: Mapped[Optional[dt.datetime]] = mapped_column(DateTime(timezone=True))
+    computed_ts: Mapped[dt.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
 # Tables that become TimescaleDB hypertables (partitioned on ts).
 HYPERTABLES = ("trade", "position_event", "event")
