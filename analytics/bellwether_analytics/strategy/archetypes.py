@@ -31,12 +31,14 @@ class StrategyConfig:
     mm_max_net_direction: float = 0.25
     mm_min_roundtrip: float = 0.5
     mm_min_trades_per_day: float = 5.0
+    mm_max_taker_ratio: float = 0.4  # applied only when aggressor data is present
     # arbitrageur
     arb_min_split_merge_ratio: float = 0.1
     # scalper
     scalp_min_trades_per_day: float = 20.0
     scalp_max_median_gap: float = 300.0
     scalp_min_family_share: float = 0.5
+    scalp_min_taker_ratio: float = 0.6  # applied only when aggressor data is present
     # accumulator
     acc_min_net_direction: float = 0.6
     acc_max_roundtrip: float = 0.3
@@ -49,30 +51,43 @@ class StrategyConfig:
 def _classify_row(f: pd.Series, c: StrategyConfig) -> tuple[str, str]:
     fam_share = f.get("top_family_share")
     fam_share = 0.0 if fam_share is None or pd.isna(fam_share) else float(fam_share)
+    has_aggr = bool(f.get("has_aggressor_data", False))
+    taker = f.get("taker_ratio")
+    taker = None if taker is None or pd.isna(taker) else float(taker)
 
     if (
         f["split_merge_ratio"] >= c.arb_min_split_merge_ratio
     ):
         return "arbitrageur", f"split_merge_ratio={f['split_merge_ratio']:.2f}"
 
+    # market_maker: balanced, round-tripping, active — and a LOW taker ratio when
+    # we have aggressor data (a true MM mostly provides liquidity).
     if (
         f["net_direction"] <= c.mm_max_net_direction
         and f["roundtrip_ratio"] >= c.mm_min_roundtrip
         and f["trades_per_day"] >= c.mm_min_trades_per_day
+        and (not has_aggr or (taker is not None and taker <= c.mm_max_taker_ratio))
     ):
-        return "market_maker", (
-            f"net_direction={f['net_direction']:.2f}, roundtrip={f['roundtrip_ratio']:.2f}"
-        )
+        reason = f"net_direction={f['net_direction']:.2f}, roundtrip={f['roundtrip_ratio']:.2f}"
+        if has_aggr and taker is not None:
+            reason += f", taker_ratio={taker:.2f}"
+        return "market_maker", reason
 
+    # scalper: rapid, concentrated in one recurring family — and a HIGH taker ratio
+    # when aggressor data is present (aggressive taker scalping).
     if (
         f["trades_per_day"] >= c.scalp_min_trades_per_day
         and f["median_gap_seconds"] <= c.scalp_max_median_gap
         and fam_share >= c.scalp_min_family_share
+        and (not has_aggr or (taker is not None and taker >= c.scalp_min_taker_ratio))
     ):
-        return "scalper", (
+        reason = (
             f"trades/day={f['trades_per_day']:.0f}, gap={f['median_gap_seconds']:.0f}s, "
             f"family_share={fam_share:.2f}"
         )
+        if has_aggr and taker is not None:
+            reason += f", taker_ratio={taker:.2f}"
+        return "scalper", reason
 
     if (
         f["net_direction"] >= c.acc_min_net_direction

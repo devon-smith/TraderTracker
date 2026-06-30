@@ -89,6 +89,7 @@ class OrderFilledListener:
                     "tx_hash": r["tx_hash"],
                     "log_index": r["log_index"],
                     "source": Source.onchain,
+                    "is_taker": r.get("is_taker"),
                 }
             )
         n = await repo.insert_trades(s, insert_rows)

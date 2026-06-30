@@ -15,6 +15,7 @@ from typing import Optional
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     Enum,
     Float,
@@ -120,6 +121,8 @@ class Trade(Base):
     tx_hash: Mapped[Optional[str]] = mapped_column(String)
     log_index: Mapped[Optional[int]] = mapped_column(Integer)
     source: Mapped[Source] = mapped_column(source_type, nullable=False)
+    # Aggressor signal — only set for source='onchain' (taker is the aggressor).
+    is_taker: Mapped[Optional[bool]] = mapped_column(Boolean)
 
     __table_args__ = (
         Index("ix_trade_wallet_ts", "wallet_id", "ts"),

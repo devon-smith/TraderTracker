@@ -16,7 +16,7 @@ from .contracts import COLLATERAL_ASSET_ID
 DECIMALS = 6  # USDC and CTF outcome tokens both use 6 decimals on Polymarket.
 
 
-def _row(dedup_suffix, wallet, side, token, size, price, tx_hash, log_index, ts):
+def _row(dedup_suffix, wallet, side, token, size, price, tx_hash, log_index, ts, is_taker):
     return {
         "dedup_key": f"onchain:{tx_hash}:{log_index}:{dedup_suffix}",
         "ts": ts,
@@ -32,6 +32,7 @@ def _row(dedup_suffix, wallet, side, token, size, price, tx_hash, log_index, ts)
         "tx_hash": tx_hash,
         "log_index": log_index,
         "source": "onchain",
+        "is_taker": is_taker,  # taker is the aggressor; maker provides liquidity
     }
 
 
@@ -66,8 +67,8 @@ def normalize_order_filled(
     price = usdc_amt / share_amt  # both scaled by 10**DECIMALS -> ratio is the price
 
     return [
-        _row("m", maker, maker_side, token, size, price, tx_hash, log_index, ts),
-        _row("t", taker, taker_side, token, size, price, tx_hash, log_index, ts),
+        _row("m", maker, maker_side, token, size, price, tx_hash, log_index, ts, is_taker=False),
+        _row("t", taker, taker_side, token, size, price, tx_hash, log_index, ts, is_taker=True),
     ]
 
 

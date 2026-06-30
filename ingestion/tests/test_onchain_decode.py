@@ -65,8 +65,10 @@ def test_normalize_maker_buys_when_maker_pays_usdc():
     assert maker["price"] == 0.75
     assert maker["notional"] == 0.75
     assert maker["dedup_key"] == "onchain:0xtx:7:m"
+    assert maker["is_taker"] is False
     assert taker["side"] == "SELL"
     assert taker["dedup_key"] == "onchain:0xtx:7:t"
+    assert taker["is_taker"] is True  # taker is the aggressor
 
 
 def test_normalize_maker_sells_when_taker_pays_usdc():

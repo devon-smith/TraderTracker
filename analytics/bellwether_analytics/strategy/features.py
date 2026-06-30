@@ -22,7 +22,7 @@ def extract_features(trades: pd.DataFrame, events: Optional[pd.DataFrame] = None
         "n_trades", "trades_per_day", "median_gap_seconds", "avg_notional",
         "total_volume", "buy_ratio", "net_direction", "roundtrip_ratio",
         "n_markets", "top_family", "top_family_share", "n_families",
-        "redeem_ratio", "split_merge_ratio",
+        "redeem_ratio", "split_merge_ratio", "taker_ratio", "has_aggressor_data",
     ]
     if trades.empty:
         return pd.DataFrame(columns=cols).rename_axis("wallet")
@@ -68,6 +68,18 @@ def extract_features(trades: pd.DataFrame, events: Optional[pd.DataFrame] = None
 
     rec = wallet_family_recurrence(trades)
     feats = feats.join(rec)
+
+    # Aggressor signal from on-chain fills (is_taker). REST-only wallets have no
+    # is_taker -> has_aggressor_data False and taker_ratio falls back to NaN.
+    feats["taker_ratio"] = float("nan")
+    feats["has_aggressor_data"] = False
+    if "is_taker" in df.columns:
+        oc = df[df["is_taker"].notna()]
+        if not oc.empty:
+            tr = oc.groupby("wallet")["is_taker"].mean().rename("taker_ratio")
+            cnt = oc.groupby("wallet")["is_taker"].size()
+            feats.loc[tr.index, "taker_ratio"] = tr
+            feats.loc[cnt.index, "has_aggressor_data"] = True
 
     # event mix: REDEEM (hold-to-resolution) and SPLIT/MERGE (mint/merge ~ MM/arb).
     feats["redeem_ratio"] = 0.0
