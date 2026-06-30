@@ -110,6 +110,24 @@ def test_aggressor_gating_blocks_market_maker_when_taker_heavy():
     assert classify(feats).loc["TK", "archetype"] != "market_maker"
 
 
+def test_mixed_onchain_and_rest_population_does_not_crash():
+    # Regression: a population mixing on-chain wallets (is_taker present) with
+    # REST-only wallets (is_taker absent -> NaN) made the is_taker column object
+    # dtype and broke the taker_ratio assignment.
+    rows = []
+    for i in range(10):
+        rows.append(_oc("OC", f"o{i}", f"btc-updown-5m-{i}", "BUY", 50,
+                        T0 + pd.Timedelta(seconds=30 * i), is_taker=True))
+    for i in range(10):
+        rows.append(_t("REST", f"r{i}", f"sports-game-{i}", "BUY", 500,
+                       T0 + pd.Timedelta(hours=6 * i), category="sports"))
+    feats = extract_features(pd.DataFrame(rows))
+    assert feats.loc["OC", "taker_ratio"] == 1.0
+    assert feats.loc["OC", "has_aggressor_data"]
+    assert pd.isna(feats.loc["REST", "taker_ratio"])
+    assert feats.loc["REST", "has_aggressor_data"] == False  # noqa: E712
+
+
 def test_rest_only_wallet_has_no_aggressor_data_but_still_classifies():
     rows = [_t("R", f"m{i}", f"sports-game-{i}", "BUY", 500, T0 + pd.Timedelta(hours=6 * i),
                category="sports") for i in range(30)]

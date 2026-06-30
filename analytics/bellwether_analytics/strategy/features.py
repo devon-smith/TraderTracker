@@ -74,12 +74,15 @@ def extract_features(trades: pd.DataFrame, events: Optional[pd.DataFrame] = None
     feats["taker_ratio"] = float("nan")
     feats["has_aggressor_data"] = False
     if "is_taker" in df.columns:
-        oc = df[df["is_taker"].notna()]
+        oc = df[df["is_taker"].notna()].copy()
         if not oc.empty:
-            tr = oc.groupby("wallet")["is_taker"].mean().rename("taker_ratio")
-            cnt = oc.groupby("wallet")["is_taker"].size()
+            # Coerce to float first: when on-chain and REST-only wallets are mixed
+            # the column is object dtype, and a bool-mean would not align onto the
+            # float taker_ratio column.
+            oc["_taker"] = oc["is_taker"].astype(float)
+            tr = oc.groupby("wallet")["_taker"].mean().astype(float)
             feats.loc[tr.index, "taker_ratio"] = tr
-            feats.loc[cnt.index, "has_aggressor_data"] = True
+            feats.loc[tr.index, "has_aggressor_data"] = True
 
     # event mix: REDEEM (hold-to-resolution) and SPLIT/MERGE (mint/merge ~ MM/arb).
     feats["redeem_ratio"] = 0.0
