@@ -1,0 +1,134 @@
+{
+  "_comment": "Curated reference repos for TraderTracker. This is INTENT, not verified fact. None of these were reachable from the session that created this file (org egress policy blocks GitHub; the GitHub integration is scoped to devon-smith/* only; add_repo is same-owner only). 'verified' stays false until scripts/fetch_references.sh clones the repo successfully and records its SHA in references/pinned.txt. Do NOT treat any 'claim' field as confirmed, and do NOT vendor code from any repo with security_audit_required=true until it has been audited line-by-line.",
+  "schema": {
+    "owner": "GitHub owner",
+    "repo": "GitHub repo name",
+    "role": "What we'd use it for",
+    "phase": "SCOPE.md phase this maps to",
+    "use": "adopt | evaluate | read-as-template | execution-only-reference",
+    "claim": "Unverified description carried over from the earlier report",
+    "license": "UNKNOWN until fetched — verify before vendoring",
+    "security_audit_required": "true if it signs transactions / handles keys",
+    "verified": "false until fetch_references.sh confirms it exists"
+  },
+  "references": [
+    {
+      "owner": "warproxxx",
+      "repo": "poly_data",
+      "role": "On-chain OrderFilled ingestion, already updated for the V2 contract migration",
+      "phase": "Phase 3 (on-chain listener)",
+      "use": "adopt",
+      "claim": "V2-aware on-chain trade/order/market data retriever reading OrderFilled directly",
+      "license": "UNKNOWN",
+      "security_audit_required": false,
+      "verified": false
+    },
+    {
+      "owner": "Jon-Becker",
+      "repo": "prediction-market-analysis",
+      "role": "Reference analysis framework + dataset",
+      "phase": "Phase 1 / Phase 5",
+      "use": "read-as-template",
+      "claim": "Framework for collecting and analyzing prediction-market data; large public dataset",
+      "license": "UNKNOWN",
+      "security_audit_required": false,
+      "verified": false
+    },
+    {
+      "owner": "SII-WANGZJ",
+      "repo": "Polymarket_data",
+      "role": "Pre-processed historical dataset to bootstrap analytics without scraping",
+      "phase": "Phase 1 (backfill)",
+      "use": "evaluate",
+      "claim": "~1.1B pre-processed Polymarket trading records",
+      "license": "UNKNOWN",
+      "security_audit_required": false,
+      "verified": false
+    },
+    {
+      "owner": "darrnhard",
+      "repo": "polymarket-smart-money",
+      "role": "Behavioral-analysis notebook — template for our scoring layer",
+      "phase": "Phase 1 (scoring)",
+      "use": "read-as-template",
+      "claim": "Quantitative behavioral analysis of high-performing wallets over on-chain events",
+      "license": "UNKNOWN",
+      "security_audit_required": false,
+      "verified": false
+    },
+    {
+      "owner": "pmxt-dev",
+      "repo": "pmxt",
+      "role": "Unified cross-platform client ('CCXT for prediction markets')",
+      "phase": "Phase 1 (client layer)",
+      "use": "evaluate",
+      "claim": "One unified API across Polymarket, Kalshi, and more",
+      "license": "UNKNOWN",
+      "security_audit_required": false,
+      "verified": false
+    },
+    {
+      "owner": "Polymarket",
+      "repo": "py-clob-client",
+      "role": "Official CLOB client for any execution path",
+      "phase": "Phase 3 (execution)",
+      "use": "evaluate",
+      "claim": "Official Polymarket order-book client (Python)",
+      "license": "UNKNOWN",
+      "security_audit_required": true,
+      "verified": false
+    },
+    {
+      "owner": "Polymarket",
+      "repo": "agents",
+      "role": "Official AI-agent framework — reference only",
+      "phase": "Phase 5",
+      "use": "read-as-template",
+      "claim": "Official Polymarket AI-agent framework",
+      "license": "UNKNOWN",
+      "security_audit_required": false,
+      "verified": false
+    },
+    {
+      "owner": "ent0n29",
+      "repo": "polybot",
+      "role": "Strategy reverse-engineering reference",
+      "phase": "Phase 5",
+      "use": "read-as-template",
+      "claim": "Reverse-engineering of Polymarket strategies plus HFT infrastructure",
+      "license": "UNKNOWN",
+      "security_audit_required": true,
+      "verified": false
+    },
+    {
+      "owner": "YichengYang-Ethan",
+      "repo": "oracle3",
+      "role": "Independent pricing engine (Wang Transform) — reference for building our own model",
+      "phase": "Phase 5",
+      "use": "read-as-template",
+      "claim": "Pricing engine over 291K+ contracts, paper-traded across platforms",
+      "license": "UNKNOWN",
+      "security_audit_required": false,
+      "verified": false
+    },
+    {
+      "owner": "al1enjesus",
+      "repo": "polymarket-whales",
+      "role": "Working whale-trade alerting loop — reference for the detect-a-tracked-wallet loop",
+      "phase": "Phase 3",
+      "use": "read-as-template",
+      "claim": "Real-time whale-trade tracker with terminal + Telegram alerts",
+      "license": "UNKNOWN",
+      "security_audit_required": false,
+      "verified": false
+    }
+  ],
+  "execution_only_kalshi": {
+    "_comment": "Kalshi has NO trader-tracking tooling because the data does not exist publicly. These are execution/market-making bots only — relevant if Kalshi ever becomes an execution venue (out of scope for the tracking project). Listed for completeness; not part of the core build.",
+    "references": [
+      {"owner": "ryanfrigo", "repo": "kalshi-ai-trading-bot", "use": "execution-only-reference", "security_audit_required": true, "verified": false},
+      {"owner": "OctagonAI", "repo": "kalshi-trading-bot-cli", "use": "execution-only-reference", "security_audit_required": true, "verified": false},
+      {"owner": "rodlaf", "repo": "KalshiMarketMaker", "use": "execution-only-reference", "security_audit_required": true, "verified": false}
+    ]
+  }
+}

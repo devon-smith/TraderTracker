@@ -1,7 +1,11 @@
 # Project Scope — TraderTracker
 
-This document maps the verified open-source landscape (audited against the
-GitHub API on 2026-06-30) onto a five-phase build plan. Each phase has explicit
+> **See also:** `docs/BELLWETHER.md` is the expanded, canonical plan (7 phases +
+> infra + dashboard). `docs/RECONCILIATION.md` maps the code below onto it and
+> records why the reference repos couldn't be fetched/verified from this session.
+> This file is the lean view: existing `tradertracker/` modules ↔ build phases.
+
+This document maps the open-source landscape onto a five-phase build plan. Each phase has explicit
 inputs, deliverables, and abandon-criteria so the project terminates cleanly if
 the edge isn't real.
 
@@ -20,10 +24,13 @@ the edge isn't real.
    verified-upstream list below; audit before running anything that signs
    transactions.
 
-## Verified upstream repos (anchor list)
+## Candidate upstream repos (anchor list — UNVERIFIED)
 
-These are the repos confirmed via the GitHub API as on-target, well-maintained,
-and not spam. Use them as building blocks rather than re-implementing.
+Candidate repos to learn from or reuse. **These have not been confirmed from this
+repo's environment** — GitHub is blocked by the session egress policy, so star
+counts and even existence are unverified claims carried from the research report.
+Run `scripts/fetch_references.sh` where GitHub is reachable to verify and pin
+them; see `references/` and `docs/RECONCILIATION.md`.
 
 | Repo | Role in our build |
 |---|---|
