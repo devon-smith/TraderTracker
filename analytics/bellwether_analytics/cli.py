@@ -33,12 +33,14 @@ kalshi_app = typer.Typer(help="Kalshi commands.")
 manifold_app = typer.Typer(help="Manifold commands.")
 analyze_app = typer.Typer(help="Analytics over the canonical tables.")
 candidates_app = typer.Typer(help="Candidate pool + validation (Phase 3).")
+strategy_app = typer.Typer(help="Strategy detection (archetypes, templates, copy chains).")
 db_app = typer.Typer(help="Database commands.")
 app.add_typer(poly, name="poly")
 app.add_typer(kalshi_app, name="kalshi")
 app.add_typer(manifold_app, name="manifold")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(candidates_app, name="candidates")
+app.add_typer(strategy_app, name="strategy")
 app.add_typer(db_app, name="db")
 
 console = Console()
@@ -376,6 +378,84 @@ def candidates_validate(
 
     tr = load_trades_df(platform=platform)
     console.print_json(data=walk_forward(tr, split_ts=split_ts))
+
+
+def _load_for_strategy(platform: str):
+    from bellwether_analytics.core import load_events_df, load_trades_df
+
+    return load_trades_df(platform=platform), load_events_df(platform=platform)
+
+
+@strategy_app.command("classify")
+def strategy_classify(
+    platform: str = typer.Option("polymarket"),
+    top: int = typer.Option(25),
+):
+    """Label each wallet with a strategy archetype + the reason."""
+    from bellwether_analytics.strategy import classify, extract_features
+
+    trades, events = _load_for_strategy(platform)
+    if trades.empty:
+        console.print("[yellow]No trades loaded.[/yellow]")
+        return
+    labeled = classify(extract_features(trades, events))
+    table = Table(title=f"Strategy archetypes ({platform})")
+    _columns(table, ("Wallet", "left"), ("Archetype", "left"), ("Tr/day", "right"),
+             ("Net dir", "right"), ("Round-trip", "right"), ("Top family", "left"), ("Reason", "left"))
+    for wallet, r in labeled.head(top).iterrows():
+        table.add_row(
+            str(wallet)[:12] + "…", str(r["archetype"]),
+            f"{r['trades_per_day']:.0f}", f"{r['net_direction']:.2f}",
+            f"{r['roundtrip_ratio']:.2f}", str(r.get("top_family") or "")[:20], str(r["reason"])[:40],
+        )
+    console.print(table)
+
+
+@strategy_app.command("templates")
+def strategy_templates_cmd(
+    platform: str = typer.Option("polymarket"),
+    min_wallets: int = typer.Option(2, help="Min distinct wallets running the template"),
+):
+    """Strategies implemented over and over: (archetype, market-family) across accounts."""
+    from bellwether_analytics.strategy import classify, extract_features, strategy_templates
+
+    trades, events = _load_for_strategy(platform)
+    if trades.empty:
+        console.print("[yellow]No trades loaded.[/yellow]")
+        return
+    arche = classify(extract_features(trades, events))["archetype"]
+    tmpl = strategy_templates(trades, arche, min_wallets=min_wallets)
+    if tmpl.empty:
+        console.print(f"[yellow]No template run by >= {min_wallets} wallets yet (load more wallets).[/yellow]")
+        return
+    table = Table(title=f"Repeated strategy templates ({platform})")
+    _columns(table, ("Archetype", "left"), ("Market family", "left"), ("Wallets", "right"), ("Volume", "right"))
+    for _, r in tmpl.head(25).iterrows():
+        table.add_row(str(r["archetype"]), str(r["family"])[:30], str(int(r["n_wallets"])), f"{r['volume']:,.0f}")
+    console.print(table)
+
+
+@strategy_app.command("leadlag")
+def strategy_leadlag(
+    platform: str = typer.Option("polymarket"),
+    max_lag: float = typer.Option(120.0, help="Max seconds between leader and follower fill"),
+    min_events: int = typer.Option(3),
+):
+    """Detect copy/follow chains: wallets that trade just after another."""
+    from bellwether_analytics.strategy import detect_followers
+
+    trades, _ = _load_for_strategy(platform)
+    pairs = detect_followers(trades, max_lag_seconds=max_lag, min_events=min_events)
+    if pairs.empty:
+        console.print("[yellow]No follow chains detected at these thresholds.[/yellow]")
+        return
+    table = Table(title=f"Lead-lag copy chains ({platform})")
+    _columns(table, ("Leader", "left"), ("Follower", "left"), ("Follows", "right"),
+             ("Markets", "right"), ("Follow %", "right"))
+    for _, r in pairs.head(25).iterrows():
+        table.add_row(str(r["leader"])[:12] + "…", str(r["follower"])[:12] + "…",
+                      str(int(r["follow_events"])), str(int(r["n_markets"])), f"{r['follow_ratio']:.0%}")
+    console.print(table)
 
 
 @db_app.command("init")

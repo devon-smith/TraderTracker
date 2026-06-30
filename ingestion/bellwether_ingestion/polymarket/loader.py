@@ -23,24 +23,42 @@ log = logging.getLogger("bellwether.polymarket")
 
 
 async def _resolve_markets(
-    s, gamma: GammaClient, condition_ids: set[str], max_markets: Optional[int]
+    s,
+    gamma: GammaClient,
+    condition_ids: set[str],
+    max_markets: Optional[int],
+    slug_map: Optional[dict[str, str]] = None,
+    title_map: Optional[dict[str, str]] = None,
 ) -> dict[str, int]:
-    """Fetch Gamma metadata for each conditionId and upsert markets. Returns
-    external_id -> surrogate id."""
+    """Upsert a market for every conditionId. The first `max_markets` get full
+    Gamma metadata; the rest get a stub built from the slug/title carried on the
+    Data API trade (so category-from-slug + market-family still work cheaply)."""
+    from .categorize import normalize_category
+
+    slug_map = slug_map or {}
+    title_map = title_map or {}
     ids = list(condition_ids)
-    if max_markets is not None:
-        ids = ids[:max_markets]
+    fetch = set(ids[:max_markets]) if max_markets is not None else set(ids)
+
     mid_map: dict[str, int] = {}
     for cid in ids:
-        try:
-            gm = gamma.market_by_condition(cid)
-        except Exception:
-            gm = None
+        gm = None
+        if cid in fetch:
+            try:
+                gm = gamma.market_by_condition(cid)
+            except Exception:
+                gm = None
         if gm:
             fields = gamma_market_fields(gm)
         else:
-            # Market not indexed by Gamma — store a stub so trades still link.
-            fields = {"external_id": cid, "category": "other", "is_multi_outcome": False}
+            slug = slug_map.get(cid)
+            fields = {
+                "external_id": cid,
+                "slug": slug,
+                "title": title_map.get(cid),
+                "category": normalize_category({"slug": slug, "question": title_map.get(cid)}),
+                "is_multi_outcome": False,
+            }
         mid_map[cid] = await repo.upsert_market(s, "polymarket", fields)
     return mid_map
 
@@ -75,7 +93,11 @@ async def load_wallet(
 
             condition_ids = {t.conditionId for t in trades if t.conditionId}
             condition_ids |= {a.conditionId for a in activity if a.conditionId}
-            mid_map = await _resolve_markets(s, gamma, condition_ids, max_markets)
+            slug_map = {t.conditionId: t.slug for t in trades if t.conditionId and t.slug}
+            title_map = {t.conditionId: t.title for t in trades if t.conditionId and t.title}
+            mid_map = await _resolve_markets(
+                s, gamma, condition_ids, max_markets, slug_map=slug_map, title_map=title_map
+            )
             await s.commit()
 
             trade_rows = []

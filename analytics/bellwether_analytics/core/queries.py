@@ -17,6 +17,7 @@ SELECT
     w.external_id AS wallet,
     m.external_id AS market,
     m.category    AS category,
+    m.slug        AS slug,
     t.outcome     AS outcome,
     t.side::text  AS side,
     t.size        AS size,

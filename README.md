@@ -57,13 +57,26 @@ tt analyze rank --platform polymarket --config config/ranking.yaml
 tt candidates build --platform polymarket --min-resolved-trades 50 --min-win-rate 0.55
 tt candidates validate 2026-03-01 --platform polymarket   # walk-forward + shuffled control
 
+# 3. strategy detection (accounts -> recurring strategy templates)
+tt strategy classify  --platform polymarket               # archetype per wallet + reason
+tt strategy templates --platform polymarket               # (archetype, family) run by many accounts
+tt strategy leadlag   --platform polymarket               # copy/follow chains
+
 # legacy in-memory helpers
 tt poly paper 0x... --slippage-bps 200                # paper-trade backtest
 tt kalshi flow --top 20                               # anonymous Kalshi flow
 ```
 
+**Strategy detection** (`bellwether_analytics.strategy`) answers "what strategies
+recur, not just which accounts win": per-wallet behavioral features →
+explainable archetype (`market_maker` / `scalper` / `accumulator` /
+`hold_to_resolution` / `arbitrageur` / `mixed`) → repeated `(archetype, market-family)`
+templates run across accounts → lead-lag copy chains. Market families collapse the
+variable suffix of a slug (`btc-updown-5m-<ts>` → `btc-updown-5m`) so the same
+strategy run over and over is one row.
+
 Exploration notebooks: `analytics/notebooks/01_manifold_validation`,
-`02_polymarket_pnl`, `03_candidate_pool`.
+`02_polymarket_pnl`, `03_candidate_pool`, `04_strategy_detection`.
 
 ## What it deliberately does NOT do (yet)
 
