@@ -30,9 +30,11 @@ from . import (
 app = typer.Typer(help="Bellwether — prediction-market trader intelligence.", no_args_is_help=True)
 poly = typer.Typer(help="Polymarket commands.")
 kalshi_app = typer.Typer(help="Kalshi commands.")
+manifold_app = typer.Typer(help="Manifold commands.")
 db_app = typer.Typer(help="Database commands.")
 app.add_typer(poly, name="poly")
 app.add_typer(kalshi_app, name="kalshi")
+app.add_typer(manifold_app, name="manifold")
 app.add_typer(db_app, name="db")
 
 console = Console()
@@ -221,6 +223,19 @@ def kalshi_flow(
             f"{f.block_trade_notional:,.0f}",
         )
     console.print(table)
+
+
+@manifold_app.command("load")
+def manifold_load(
+    identifier: str = typer.Argument(..., help="Manifold username or user id"),
+    max_pages: int = typer.Option(200),
+    max_bets: Optional[int] = typer.Option(None, help="Cap most-recent bets processed"),
+):
+    """Backfill a Manifold user's bet history into the canonical tables."""
+    from bellwether_ingestion.manifold import run_load_user
+
+    n = run_load_user(identifier, max_pages=max_pages, max_bets=max_bets)
+    console.print(f"[green]wrote {n} new trades[/green] for {identifier}")
 
 
 @db_app.command("init")
