@@ -12,6 +12,9 @@ dependencies = [
     "asyncpg>=0.29",
     "greenlet>=3.0",
     "psycopg2-binary>=2.9",
+    "eth-abi>=5.0",
+    "eth-utils>=4.0",
+    "eth-hash[pycryptodome]>=0.7",
 ]
 
 [build-system]
