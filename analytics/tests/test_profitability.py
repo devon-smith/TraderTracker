@@ -64,3 +64,56 @@ def test_rank_templates_out_of_sample_and_shuffled_control():
     shuffled_edge = edge(rank_templates(trades, split_ts=SPLIT, shuffle=True, seed=0))
     assert real_edge > 0
     assert shuffled_edge < real_edge  # control destroys the strategy edge
+
+
+TEST_PERIODS = [
+    pd.Timestamp("2026-07-05T00:00:00Z"),
+    pd.Timestamp("2026-07-15T00:00:00Z"),
+    pd.Timestamp("2026-07-25T00:00:00Z"),
+]
+
+
+def _resolved_at(w, market, resolution, ts):
+    return dict(wallet=w, market=market, slug="x-1", category="crypto", outcome="YES", side="BUY",
+                size=100, price=0.4, notional=40, ts=ts, resolution=resolution,
+                resolved_at=ts + pd.Timedelta(days=1))
+
+
+def _persistence_fixture():
+    rows = []
+    for w in [f"S{i}" for i in range(6)]:  # scalper template: profitable every sub-period
+        rows += _scalp_train(w)
+        for i, ts in enumerate(TEST_PERIODS):
+            rows.append(_resolved_at(w, f"{w}win{i}", "YES", ts))   # +60 each period
+    for w in [f"A{i}" for i in range(6)]:  # accumulator template: losing every sub-period
+        rows += _acc_train(w)
+        for i, ts in enumerate(TEST_PERIODS):
+            rows.append(_resolved_at(w, f"{w}lose{i}", "NO", ts))   # -40 each period
+    return pd.DataFrame(rows)
+
+
+def test_rank_templates_persistence_and_capacity():
+    trades = _persistence_fixture()
+    ranked = rank_templates(trades, split_ts=SPLIT, n_periods=3)
+    sc = ranked[ranked["archetype"] == "scalper"].iloc[0]
+    ac = ranked[ranked["archetype"] == "accumulator"].iloc[0]
+
+    # persistence over time: scalper profitable in EVERY test sub-period; accumulator in none
+    assert sc["persistence"] == 1.0
+    assert ac["persistence"] == 0.0
+    # capacity proxy (P&L per unit position size): profitable vs negative
+    assert sc["pnl_per_volume"] > 0
+    assert ac["pnl_per_volume"] < 0
+    # win rate + distinct-wallet count surfaced
+    assert sc["pct_profitable"] == 1.0
+    assert sc["n_wallets"] == 6
+
+    # shuffled-label control: the edge collapses, so the ranking isn't an artifact.
+    def edge(df):
+        s = df[df["archetype"] == "scalper"]["median_pnl"]
+        a = df[df["archetype"] == "accumulator"]["median_pnl"]
+        return (s.iloc[0] if len(s) else 0) - (a.iloc[0] if len(a) else 0)
+
+    shuffled = rank_templates(trades, split_ts=SPLIT, n_periods=3, shuffle=True, seed=1)
+    assert edge(ranked) > 0
+    assert edge(shuffled) < edge(ranked)
