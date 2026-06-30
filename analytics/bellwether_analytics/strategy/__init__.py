@@ -14,6 +14,7 @@ Pipeline:
 """
 
 from .archetypes import STRATEGY_ARCHETYPES, StrategyConfig, classify
+from .clustering import cluster_wallets, compare_to_rules, recommend_thresholds
 from .features import extract_features
 from .leadlag import detect_followers, detect_followers_significant
 from .profitability import archetype_pnl, rank_templates, template_pnl
@@ -36,4 +37,7 @@ __all__ = [
     "archetype_pnl",
     "template_pnl",
     "rank_templates",
+    "cluster_wallets",
+    "compare_to_rules",
+    "recommend_thresholds",
 ]
