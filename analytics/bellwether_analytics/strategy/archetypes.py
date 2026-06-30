@@ -46,6 +46,9 @@ class StrategyConfig:
     hold_max_trades_per_day: float = 2.0
     hold_min_redeem_ratio: float = 0.2
     hold_max_roundtrip: float = 0.3
+    # temporal recurrence (in-time, within an account)
+    recurrence_regular_threshold: float = 0.6
+    recurrence_min_cycles: int = 3
 
 
 def _classify_row(f: pd.Series, c: StrategyConfig) -> tuple[str, str]:

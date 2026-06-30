@@ -435,6 +435,21 @@ def strategy_templates_cmd(
     console.print(table)
 
 
+@strategy_app.command("recurrence")
+def strategy_recurrence(
+    wallet: str = typer.Argument(..., help="Wallet external id"),
+    platform: str = typer.Option("polymarket"),
+):
+    """Temporal recurrence: does this wallet run the same cycle on a regular cadence?"""
+    from bellwether_analytics.strategy import recurrence_in_time_report
+
+    trades, events = _load_for_strategy(platform)
+    if trades.empty:
+        console.print("[yellow]No trades loaded.[/yellow]")
+        return
+    console.print_json(data=recurrence_in_time_report(trades, events, wallet))
+
+
 @strategy_app.command("leadlag")
 def strategy_leadlag(
     platform: str = typer.Option("polymarket"),
