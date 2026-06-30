@@ -15,7 +15,11 @@ Kalshi-second (where it isn't, so we aggregate anonymous flow instead).
 | `tradertracker.kalshi.flow` | Per-market, per-side flow aggregator over the anonymous `GetTrades` feed |
 | `tradertracker.analytics.specialization` | Category breakdown for a wallet's trade history |
 | `tradertracker.analytics.paper_trade` | Backtest copy-trades against a leader's history with a slippage model |
+| `tradertracker.manifold.client` | Manifold REST client (play-money, fully open per-user bet API — Phase 0 prototype venue) |
 | `tradertracker.cli` | `tt` CLI |
+
+See [SCOPE.md](./SCOPE.md) for the phased build plan and the verified upstream
+repos each phase leverages.
 
 ## Install
 
