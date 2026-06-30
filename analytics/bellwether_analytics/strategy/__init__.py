@@ -16,6 +16,7 @@ Pipeline:
 from .archetypes import STRATEGY_ARCHETYPES, StrategyConfig, classify
 from .features import extract_features
 from .leadlag import detect_followers, detect_followers_significant
+from .profitability import archetype_pnl, rank_templates, template_pnl
 from .recurrence import market_family, strategy_templates, wallet_family_recurrence
 from .recurrence_time import cycle_motifs, periodicity, recurrence_in_time_report
 
@@ -32,4 +33,7 @@ __all__ = [
     "periodicity",
     "cycle_motifs",
     "recurrence_in_time_report",
+    "archetype_pnl",
+    "template_pnl",
+    "rank_templates",
 ]

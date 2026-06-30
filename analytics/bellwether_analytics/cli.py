@@ -435,6 +435,31 @@ def strategy_templates_cmd(
     console.print(table)
 
 
+@strategy_app.command("profitability")
+def strategy_profitability(
+    split_ts: str = typer.Argument(..., help="ISO timestamp; templates fit before, P&L measured after"),
+    platform: str = typer.Option("polymarket"),
+):
+    """Rank (archetype, market-family) strategy templates by out-of-sample P&L."""
+    from bellwether_analytics.strategy import rank_templates
+
+    trades, _ = _load_for_strategy(platform)
+    if trades.empty:
+        console.print("[yellow]No trades loaded.[/yellow]")
+        return
+    ranked = rank_templates(trades, split_ts=split_ts)
+    if ranked.empty:
+        console.print("[yellow]Not enough data on both sides of the split.[/yellow]")
+        return
+    table = Table(title=f"Strategy templates by out-of-sample P&L ({platform})")
+    _columns(table, ("Archetype", "left"), ("Family", "left"), ("Wallets", "right"),
+             ("Median P&L", "right"), ("Sharpe", "right"), ("% profit", "right"))
+    for _, r in ranked.head(25).iterrows():
+        table.add_row(str(r["archetype"]), str(r["family"])[:24], str(int(r["n_wallets"])),
+                      f"{r['median_pnl']:,.0f}", f"{r['sharpe']:.2f}", f"{r['pct_profitable']:.0%}")
+    console.print(table)
+
+
 @strategy_app.command("recurrence")
 def strategy_recurrence(
     wallet: str = typer.Argument(..., help="Wallet external id"),
