@@ -1,30 +1,44 @@
-# TraderTracker
+# Bellwether (repo: TraderTracker)
 
-Operationalizes the feasibility study on tracking, scoring, and paper-trading
-prediction-market wallets. Polymarket-first (where attribution is possible);
-Kalshi-second (where it isn't, so we aggregate anonymous flow instead).
+Prediction-market trader intelligence. Research-first: determine whether top
+traders' edges are **trackable** (copyable fast enough to matter) or
+**reverse-engineerable** (signal source inferable). Polymarket-first (attribution
+is possible); Kalshi as anonymous flow (it isn't); Manifold as a zero-risk
+prototype venue.
 
-## What's in here
+- **Plan:** `docs/BELLWETHER.md` (canonical) · `SCOPE.md` (lean module↔phase view)
+- **Reconciliation & access notes:** `docs/RECONCILIATION.md`
+- **Contributor guide:** `CLAUDE.md`
 
-| Module | What it does |
-|---|---|
-| `tradertracker.polymarket.data_api` | Polymarket Data API client (`/trades`, `/positions`, `/activity`, `/holders`, `/value`) with pagination |
-| `tradertracker.polymarket.gamma` | Gamma API client — leaderboard, markets, events |
-| `tradertracker.polymarket.wallet_scoring` | Explainable wallet score: win rate, P&L, volume, category concentration |
-| `tradertracker.kalshi.client` | Kalshi REST client with RSA-PSS request signing; public endpoints work unauth |
-| `tradertracker.kalshi.flow` | Per-market, per-side flow aggregator over the anonymous `GetTrades` feed |
-| `tradertracker.analytics.specialization` | Category breakdown for a wallet's trade history |
-| `tradertracker.analytics.paper_trade` | Backtest copy-trades against a leader's history with a slippage model |
-| `tradertracker.manifold.client` | Manifold REST client (play-money, fully open per-user bet API — Phase 0 prototype venue) |
-| `tradertracker.cli` | `tt` CLI |
+## Monorepo layout
 
-See [SCOPE.md](./SCOPE.md) for the phased build plan and the verified upstream
-repos each phase leverages.
+```
+ingestion/    Python `bellwether_ingestion` — clients, normalizers, DB (asyncpg)
+analytics/    Python `bellwether_analytics` — scoring, paper-trade, flow, `tt` CLI
+dashboard/    Next.js (App Router) + Prisma — read-only research UI
+infra/        docker-compose (TimescaleDB), Caddy, Dockerfile, db/migrations
+scripts/      deploy.sh, fetch_references.sh
+references/   curated upstream repos (UNVERIFIED — see references/README.md)
+docs/         BELLWETHER.md, RECONCILIATION.md
+```
 
-## Install
+Dependency direction: **analytics → ingestion** (shared models in
+`bellwether_ingestion.schemas`).
+
+## Quickstart
 
 ```bash
-pip install -e .
+# Python (workspace)
+uv sync
+# or pip:
+pip install -e ./ingestion && pip install -e ./analytics --no-deps \
+  && pip install typer rich python-dateutil
+pytest -q                      # 11 tests
+
+# Stack
+cp .env.example .env
+docker compose -f infra/docker-compose.yml up -d     # db + migrate + ingestion + dashboard
+tt db init                     # apply canonical schema to $DATABASE_URL
 ```
 
 ## CLI
@@ -34,39 +48,24 @@ tt poly leaderboard --window month --limit 25
 tt poly wallet 0x... --pages 10
 tt poly rank 0xA 0xB 0xC --min-trades 50 --min-win-rate 0.55
 tt poly categories 0x...
-tt poly paper 0x... --size-scale 0.05 --slippage-bps 200
-
-tt kalshi flow --ticker KXFED --top 20
+tt poly paper 0x... --slippage-bps 200
+tt kalshi flow --top 20
+tt db init
 ```
 
 ## What it deliberately does NOT do (yet)
 
-- **No live trading.** The paper-trade simulator is a backtest; nothing places real orders.
-- **No on-chain `OrderFilled` listener.** The Data API path is sufficient for
-  research, ranking, and backtests. A live listener belongs behind a paid Polygon
-  RPC (Alchemy/QuickNode) and the V2 contract `0xE111180000d2663C0091e4f400237545B87B996B` — see the V2 migration notes in the study.
-- **No Kalshi account-level attribution.** The Kalshi public feed is anonymized
-  by design; the `flow` module is the only honest "smart money" surface available.
-- **No wallet clustering.** Chainalysis-style cross-wallet linkage is out of scope.
+- **No live trading.** The paper-trade simulator is a backtest.
+- **No on-chain `OrderFilled` listener yet** (Phase 2.2 — needs a paid Polygon RPC
+  + V2 contract `0xE111180000d2663C0091e4f400237545B87B996B`).
+- **No Kalshi account attribution** — anonymized by design; flow aggregation only.
+- **No wallet clustering.**
 
-## Tests
+## Verification status
 
-```bash
-pip install pytest
-pytest -q
-```
-
-## Project layout
-
-```
-tradertracker/
-  polymarket/   # Data API, Gamma, wallet scoring
-  kalshi/       # RSA-PSS signed REST client, anonymous flow aggregator
-  analytics/    # Category breakdown, paper-trade simulator
-  cli.py        # `tt` entry point
-tests/
-```
-
-See `.env.example` for configuration. Most Polymarket endpoints work
-unauthenticated; Kalshi public endpoints (`GetTrades`, markets, orderbook) also
-work without keys.
+- Python: 11 tests pass; ruff clean.
+- DB: canonical schema verified on TimescaleDB (extension + `trade` hypertable +
+  idempotent re-apply + dedup + async insert round-trip).
+- Compose: `docker compose config` valid.
+- Dashboard: npm install + ESLint + SWC compile pass locally; full `next build`
+  (needs the Prisma engine host) runs in CI — see `dashboard/README.md`.

@@ -1,0 +1,55 @@
+// Prisma is used purely as a typed read client over the Bellwether schema.
+// Migrations are owned by infra/db/migrations/*.sql (NOT prisma migrate), so only
+// the cleanly-keyed reference/derived tables are modeled here. The `trade`
+// hypertable (no single-column PK) is queried via $queryRaw where needed.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model CandidateScore {
+  platform          String
+  walletId          String   @map("wallet_id")
+  tradeCount        Int?     @map("trade_count")
+  totalVolume       Float?   @map("total_volume")
+  totalPnl          Float?   @map("total_pnl")
+  winRate           Float?   @map("win_rate")
+  resolvedPositions Int?     @map("resolved_positions")
+  topCategory       String?  @map("top_category")
+  concentration     Float?
+  score             Float?
+  computedTs        DateTime @map("computed_ts")
+
+  @@id([platform, walletId])
+  @@map("candidate_score")
+}
+
+model Wallet {
+  platform  String
+  walletId  String    @map("wallet_id")
+  username  String?
+  firstSeen DateTime? @map("first_seen")
+  lastSeen  DateTime? @map("last_seen")
+
+  @@id([platform, walletId])
+  @@map("wallet")
+}
+
+model KalshiFlow {
+  ticker        String
+  yesNotional   Float?    @map("yes_notional")
+  noNotional    Float?    @map("no_notional")
+  imbalance     Float?
+  blockNotional Float?    @map("block_notional")
+  windowStart   DateTime? @map("window_start")
+  windowEnd     DateTime  @map("window_end")
+  computedTs    DateTime  @map("computed_ts")
+
+  @@id([ticker, windowEnd])
+  @@map("kalshi_flow")
+}
