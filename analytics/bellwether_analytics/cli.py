@@ -72,6 +72,31 @@ def poly_leaderboard(
     console.print(table)
 
 
+@poly.command("load")
+def poly_load(
+    address: str = typer.Argument(..., help="EOA or proxy wallet address"),
+    max_trade_pages: int = typer.Option(200),
+    max_markets: Optional[int] = typer.Option(None, help="Cap distinct markets fetched"),
+):
+    """Backfill a Polymarket wallet's trade + activity history into the canonical tables."""
+    from bellwether_ingestion.polymarket import run_load_wallet
+
+    nt, ne = run_load_wallet(address, max_trade_pages=max_trade_pages, max_markets=max_markets)
+    console.print(f"[green]wrote {nt} trades, {ne} position events[/green] for {address}")
+
+
+@poly.command("seed-leaderboard")
+def poly_seed_leaderboard(
+    n: int = typer.Argument(100),
+    window: str = typer.Option("month", help="day | week | month | all"),
+):
+    """Seed the wallet pool from the Gamma leaderboard."""
+    from bellwether_ingestion.polymarket import run_seed_leaderboard
+
+    c = run_seed_leaderboard(n, window=window)
+    console.print(f"[green]seeded {c} wallets[/green] from the {window} leaderboard")
+
+
 @poly.command("wallet")
 def poly_wallet(
     address: str = typer.Argument(..., help="EOA or proxy wallet address"),

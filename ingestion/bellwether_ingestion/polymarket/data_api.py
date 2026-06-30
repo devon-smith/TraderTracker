@@ -23,6 +23,8 @@ from ..schemas import Activity, Position, Trade
 
 DEFAULT_BASE = os.environ.get("POLYMARKET_DATA_API", "https://data-api.polymarket.com")
 
+_RETRY_STATUS = {429, 500, 502, 503, 504}
+
 
 class DataAPIClient:
     """Synchronous Polymarket Data API client with automatic pagination."""
@@ -45,18 +47,46 @@ class DataAPIClient:
     def __exit__(self, *exc) -> None:
         self.close()
 
-    def _get(self, path: str, params: dict) -> list[dict]:
+    def _get(self, path: str, params: dict, max_retries: int = 5) -> list[dict]:
         url = f"{self.base_url}{path}"
         params = {k: v for k, v in params.items() if v is not None}
-        resp = self._client.get(url, params=params)
-        if resp.status_code == 429:
-            time.sleep(1.0)
-            resp = self._client.get(url, params=params)
+        last_exc = None
+        for attempt in range(max_retries):
+            try:
+                resp = self._client.get(url, params=params)
+                if resp.status_code in _RETRY_STATUS:
+                    time.sleep(min(2**attempt * 0.5, 8.0))
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                if isinstance(data, dict) and "data" in data:
+                    data = data["data"]
+                return data if isinstance(data, list) else []
+            except httpx.TransportError as e:
+                last_exc = e
+                time.sleep(min(2**attempt * 0.5, 8.0))
+        if last_exc:
+            raise last_exc
         resp.raise_for_status()
-        data = resp.json()
-        if isinstance(data, dict) and "data" in data:
-            data = data["data"]
-        return data if isinstance(data, list) else []
+        return []
+
+    def iter_activity(self, user: str, page_size: int = 500, max_pages: int = 200):
+        """Paginate a wallet's /activity feed (stops at the API's offset cap)."""
+        offset = 0
+        for _ in range(max_pages):
+            try:
+                batch = self.activity(user=user, limit=page_size, offset=offset)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400:  # deep-offset cap reached
+                    return
+                raise
+            if not batch:
+                return
+            for a in batch:
+                yield a
+            if len(batch) < page_size:
+                return
+            offset += len(batch)
 
     def trades(
         self,
@@ -78,10 +108,37 @@ class DataAPIClient:
         page_size: int = 500,
         max_pages: int = 200,
     ) -> Iterator[Trade]:
-        """Paginate through a wallet's complete trade history."""
+        """Paginate through a wallet's trade history (stops at the API's offset cap)."""
         offset = 0
         for _ in range(max_pages):
-            batch = self.trades(user=user, market=market, limit=page_size, offset=offset)
+            try:
+                batch = self.trades(user=user, market=market, limit=page_size, offset=offset)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400:  # deep-offset cap reached
+                    return
+                raise
+            if not batch:
+                return
+            for t in batch:
+                yield t
+            if len(batch) < page_size:
+                return
+            offset += len(batch)
+
+    def recent_trades(self, limit: int = 500, offset: int = 0) -> list[Trade]:
+        """Global recent trades (no user filter) — used to seed an active-wallet pool."""
+        raw = self._get("/trades", {"limit": limit, "offset": offset})
+        return [Trade.model_validate(t) for t in raw]
+
+    def iter_recent_trades(self, page_size: int = 500, max_pages: int = 4) -> Iterator[Trade]:
+        offset = 0
+        for _ in range(max_pages):
+            try:
+                batch = self.recent_trades(limit=page_size, offset=offset)
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 400:
+                    return
+                raise
             if not batch:
                 return
             for t in batch:

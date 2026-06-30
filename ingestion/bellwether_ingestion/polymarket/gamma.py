@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import os
+import time
 from typing import Optional
 
 import httpx
 from pydantic import BaseModel
 
 DEFAULT_BASE = os.environ.get("POLYMARKET_GAMMA_API", "https://gamma-api.polymarket.com")
+
+_RETRY_STATUS = {429, 500, 502, 503, 504}
 
 
 class LeaderboardEntry(BaseModel):
@@ -36,16 +39,41 @@ class GammaClient:
     def __exit__(self, *exc) -> None:
         self.close()
 
-    def _get(self, path: str, params: Optional[dict] = None):
+    def _get(self, path: str, params: Optional[dict] = None, max_retries: int = 5):
         url = f"{self.base_url}{path}"
         params = {k: v for k, v in (params or {}).items() if v is not None}
-        resp = self._client.get(url, params=params)
+        last_exc: Optional[Exception] = None
+        for attempt in range(max_retries):
+            try:
+                resp = self._client.get(url, params=params)
+                if resp.status_code in _RETRY_STATUS:
+                    time.sleep(min(2**attempt * 0.5, 8.0))
+                    continue
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.TransportError as e:
+                last_exc = e
+                time.sleep(min(2**attempt * 0.5, 8.0))
+        if last_exc:
+            raise last_exc
         resp.raise_for_status()
         return resp.json()
 
+    def market_by_condition(self, condition_id: str) -> Optional[dict]:
+        """Fetch the Gamma market for a CTF conditionId, or None if not indexed."""
+        data = self._get("/markets", {"condition_ids": condition_id})
+        if isinstance(data, dict) and "data" in data:
+            data = data["data"]
+        return data[0] if isinstance(data, list) and data else None
+
     def leaderboard(self, window: str = "all", limit: int = 100) -> list[LeaderboardEntry]:
-        """Fetch top wallets. `window` is one of: 'day','week','month','all'."""
-        raw = self._get("/leaderboard", {"window": window, "limit": limit})
+        """Fetch top wallets. Returns [] if the endpoint is unavailable (Polymarket
+        no longer exposes a public Gamma leaderboard — callers should fall back to
+        a recent-volume seed)."""
+        try:
+            raw = self._get("/leaderboard", {"window": window, "limit": limit})
+        except Exception:
+            return []
         if isinstance(raw, dict) and "data" in raw:
             raw = raw["data"]
         entries: list[LeaderboardEntry] = []
