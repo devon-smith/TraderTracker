@@ -15,11 +15,10 @@ import asyncio
 from typing import Optional
 
 import typer
-from rich.console import Console
-from rich.table import Table
-
 from bellwether_ingestion.kalshi import KalshiClient
 from bellwether_ingestion.polymarket import DataAPIClient, GammaClient
+from rich.console import Console
+from rich.table import Table
 
 from . import (
     FlowAggregator,
@@ -40,6 +39,11 @@ app.add_typer(db_app, name="db")
 console = Console()
 
 
+def _columns(table: Table, *specs: tuple[str, str]) -> None:
+    for name, just in specs:
+        table.add_column(name, justify=just)
+
+
 @poly.command("leaderboard")
 def poly_leaderboard(
     window: str = typer.Option("month", help="day | week | month | all"),
@@ -49,8 +53,11 @@ def poly_leaderboard(
     with GammaClient() as g:
         entries = g.leaderboard(window=window, limit=limit)
     table = Table(title=f"Polymarket leaderboard — {window}")
-    for col, just in [("Rank", "right"), ("Wallet", "left"), ("Username", "left"), ("Volume", "right"), ("PnL", "right")]:
-        table.add_column(col, justify=just)
+    _columns(
+        table,
+        ("Rank", "right"), ("Wallet", "left"), ("Username", "left"),
+        ("Volume", "right"), ("PnL", "right"),
+    )
     for e in entries:
         table.add_row(
             str(e.rank or ""),
@@ -114,8 +121,11 @@ def poly_rank(
     )
 
     table = Table(title="Ranked wallets")
-    for col, just in [("Wallet", "left"), ("Trades", "right"), ("Volume", "right"), ("PnL", "right"), ("Win%", "right"), ("Top cat", "left"), ("Concen.", "right"), ("Score", "right")]:
-        table.add_column(col, justify=just)
+    _columns(
+        table,
+        ("Wallet", "left"), ("Trades", "right"), ("Volume", "right"), ("PnL", "right"),
+        ("Win%", "right"), ("Top cat", "left"), ("Concen.", "right"), ("Score", "right"),
+    )
     for s in ranked:
         table.add_row(
             s.wallet[:10] + "…",
@@ -143,8 +153,11 @@ def poly_categories(
         trades = list(d.iter_trades(user=address, max_pages=pages))
     rows = category_breakdown(trades)
     table = Table(title=f"Category breakdown for {address[:10]}…")
-    for col, just in [("Category", "left"), ("Trades", "right"), ("Volume", "right"), ("Share", "right"), ("Net buy", "right")]:
-        table.add_column(col, justify=just)
+    _columns(
+        table,
+        ("Category", "left"), ("Trades", "right"), ("Volume", "right"),
+        ("Share", "right"), ("Net buy", "right"),
+    )
     for r in rows[:25]:
         table.add_row(
             r["category"],
@@ -193,8 +206,11 @@ def kalshi_flow(
         agg.update(k.iter_trades(ticker=ticker, min_ts=min_ts, max_ts=max_ts, max_pages=pages))
     rows = agg.top_imbalances(n=top, min_notional=min_notional)
     table = Table(title="Kalshi flow imbalances")
-    for col, just in [("Ticker", "left"), ("Trades", "right"), ("Total $", "right"), ("YES $", "right"), ("NO $", "right"), ("Imbalance", "right"), ("Block $", "right")]:
-        table.add_column(col, justify=just)
+    _columns(
+        table,
+        ("Ticker", "left"), ("Trades", "right"), ("Total $", "right"), ("YES $", "right"),
+        ("NO $", "right"), ("Imbalance", "right"), ("Block $", "right"),
+    )
     for f in rows:
         table.add_row(
             f.ticker,

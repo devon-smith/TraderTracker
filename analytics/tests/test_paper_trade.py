@@ -1,5 +1,4 @@
 import pytest
-
 from bellwether_analytics.paper_trade import PaperTradeSimulator
 from bellwether_ingestion.schemas import Trade
 

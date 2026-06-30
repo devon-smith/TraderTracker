@@ -1,5 +1,4 @@
 import httpx
-
 from bellwether_ingestion.manifold.client import ManifoldClient
 
 

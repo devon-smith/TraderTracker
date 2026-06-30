@@ -1,0 +1,11 @@
+# Bellwether reverse proxy (enabled via the `proxy` compose profile, for prod).
+# Set DASHBOARD_DOMAIN to a real hostname for automatic HTTPS; defaults to :80.
+# Generate the password hash with:
+#   docker run --rm caddy:2 caddy hash-password --plaintext 'yourpassword'
+# and put it in .env as CADDY_BASIC_AUTH_HASH (with CADDY_BASIC_AUTH_USER).
+{$DASHBOARD_DOMAIN::80} {
+	basic_auth {
+		{$CADDY_BASIC_AUTH_USER} {$CADDY_BASIC_AUTH_HASH}
+	}
+	reverse_proxy dashboard:3000
+}
