@@ -11,9 +11,49 @@ from __future__ import annotations
 import datetime as dt
 from typing import Optional
 
-from .contracts import COLLATERAL_ASSET_ID
+from .contracts import COLLATERAL_ASSET_ID, ORDER_FILLED_V2, ORDER_FILLED_V2_TOPIC0
 
 DECIMALS = 6  # USDC and CTF outcome tokens both use 6 decimals on Polymarket.
+
+# A V2 OrderFilled log carries one word per non-indexed field (side..metadata);
+# the trailing builder+metadata are what a V1 log lacks.
+_V2_DATA_MIN_BYTES = 32 * len(ORDER_FILLED_V2.non_indexed)
+
+
+class V2OrderFilledError(ValueError):
+    """A log does not match the live-verified V2 OrderFilled shape."""
+
+
+def _to_bytes(x) -> bytes:
+    if isinstance(x, (bytes, bytearray)):
+        return bytes(x)
+    s = x[2:] if isinstance(x, str) and x[:2].lower() == "0x" else x
+    return bytes.fromhex(s)
+
+
+def assert_v2_order_filled_log(topics: list, data) -> None:
+    """Guard a raw log against the live-verified V2 OrderFilled BEFORE decoding, so
+    a V1/foreign log is rejected loudly instead of silently decoded as garbage.
+
+    Asserts: topic[0] == the verified V2 signature hash; exactly 4 topics
+    (sig + 3 indexed = orderHash/maker/taker); and enough data to carry the
+    trailing builder+metadata fields (their presence distinguishes V2 from V1).
+    Raises V2OrderFilledError on any mismatch."""
+    if not topics:
+        raise V2OrderFilledError("log has no topics")
+    raw = topics[0]
+    t0 = raw.lower() if isinstance(raw, str) else "0x" + _to_bytes(raw).hex()
+    if t0 != ORDER_FILLED_V2_TOPIC0:
+        raise V2OrderFilledError(
+            f"topic0 {t0} != verified V2 OrderFilled {ORDER_FILLED_V2_TOPIC0}"
+        )
+    if len(topics) != 4:
+        raise V2OrderFilledError(f"expected 4 topics (sig + 3 indexed), got {len(topics)}")
+    n = len(_to_bytes(data))
+    if n < _V2_DATA_MIN_BYTES:
+        raise V2OrderFilledError(
+            f"data {n}B < {_V2_DATA_MIN_BYTES}B — builder/metadata absent (looks like a V1 log)"
+        )
 
 
 def _row(dedup_suffix, wallet, side, token, size, price, tx_hash, log_index, ts, is_taker, block_number):

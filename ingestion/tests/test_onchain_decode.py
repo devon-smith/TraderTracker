@@ -3,9 +3,19 @@ the V1 ABI, decode it back, and normalize to trade rows."""
 
 import datetime as dt
 
+import pytest
 from bellwether_ingestion.polymarket_onchain import decode_log, normalize_order_filled
-from bellwether_ingestion.polymarket_onchain.contracts import ORDER_FILLED_V1
+from bellwether_ingestion.polymarket_onchain.contracts import (
+    ORDER_FILLED_V1,
+    ORDER_FILLED_V2,
+    ORDER_FILLED_V2_TOPIC0,
+    order_filled_topic0,
+)
 from bellwether_ingestion.polymarket_onchain.decode import event_topic0
+from bellwether_ingestion.polymarket_onchain.normalize import (
+    V2OrderFilledError,
+    assert_v2_order_filled_log,
+)
 from eth_abi import encode
 
 MAKER = "0x" + "11" * 20
@@ -81,3 +91,75 @@ def test_normalize_maker_sells_when_taker_pays_usdc():
     assert maker["asset"] == "999"
     assert maker["size"] == 1.0
     assert maker["price"] == 0.6
+
+
+# --- V2 OrderFilled: live-verified layout + ingest assertions -----------------
+
+ORDER_HASH = b"\xab" * 32
+BUILDER = b"\xbb" * 32
+METADATA = b"\xcc" * 32
+
+
+def _make_v2_log(token_id=12345, side=0, maker_amt=750_000, taker_amt=1_000_000, topic0=None):
+    topics = [
+        topic0 or ORDER_FILLED_V2_TOPIC0,
+        "0x" + ORDER_HASH.hex(),
+        _addr_topic(MAKER),
+        _addr_topic(TAKER),
+    ]
+    data = "0x" + encode(
+        ["uint8", "uint256", "uint256", "uint256", "uint256", "bytes32", "bytes32"],
+        [side, token_id, maker_amt, taker_amt, 0, BUILDER, METADATA],
+    ).hex()
+    return topics, data
+
+
+def test_v2_signature_and_verified_topic0():
+    assert ORDER_FILLED_V2.signature() == (
+        "OrderFilled(bytes32,address,address,uint8,uint256,uint256,uint256,uint256,bytes32,bytes32)"
+    )
+    # the exported topic0 for v2 is the authoritative constant, not re-derived
+    assert order_filled_topic0("v2") == ORDER_FILLED_V2_TOPIC0
+    assert ORDER_FILLED_V2_TOPIC0.startswith("0x") and len(ORDER_FILLED_V2_TOPIC0) == 66
+
+
+def test_v2_decode_all_ten_fields():
+    topics, data = _make_v2_log()
+    d = decode_log(ORDER_FILLED_V2, topics, data)
+    # maker/taker pulled from the indexed topics
+    assert d["maker"].lower() == MAKER
+    assert d["taker"].lower() == TAKER
+    assert d["orderHash"] == "0x" + "ab" * 32
+    # all 10 fields present, including the trailing builder/metadata that mark V2
+    assert set(d) == {
+        "orderHash", "maker", "taker", "side", "tokenId",
+        "makerAmountFilled", "takerAmountFilled", "fee", "builder", "metadata",
+    }
+    assert d["tokenId"] == 12345
+    assert d["builder"] == BUILDER
+    assert d["metadata"] == METADATA
+
+
+def test_v2_assert_accepts_valid_log():
+    topics, data = _make_v2_log()
+    assert assert_v2_order_filled_log(topics, data) is None  # no raise
+
+
+def test_v2_assert_rejects_wrong_topic0():
+    topics, data = _make_v2_log(topic0=event_topic0(ORDER_FILLED_V1))
+    with pytest.raises(V2OrderFilledError, match="topic0"):
+        assert_v2_order_filled_log(topics, data)
+
+
+def test_v2_assert_rejects_v1_shaped_log():
+    # correct V2 topic0 but V1-shaped data (5 words, no builder/metadata)
+    topics = [ORDER_FILLED_V2_TOPIC0, "0x" + ORDER_HASH.hex(), _addr_topic(MAKER), _addr_topic(TAKER)]
+    v1_data = "0x" + encode(["uint256"] * 5, [0, 12345, 750_000, 1_000_000, 0]).hex()
+    with pytest.raises(V2OrderFilledError, match="builder/metadata"):
+        assert_v2_order_filled_log(topics, v1_data)
+
+
+def test_v2_assert_rejects_wrong_topic_count():
+    topics, data = _make_v2_log()
+    with pytest.raises(V2OrderFilledError, match="4 topics"):
+        assert_v2_order_filled_log(topics[:3], data)

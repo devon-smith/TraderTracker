@@ -22,9 +22,16 @@ from .contracts import (
     NEG_RISK_CTF_EXCHANGE_V2,
     ORDER_FILLED_V1,
     ORDER_FILLED_V2,
+    order_filled_topic0,
 )
-from .decode import decode_log, event_topic0
-from .normalize import block_ts_to_dt, freshness_lag_seconds, normalize_order_filled
+from .decode import decode_log
+from .normalize import (
+    V2OrderFilledError,
+    assert_v2_order_filled_log,
+    block_ts_to_dt,
+    freshness_lag_seconds,
+    normalize_order_filled,
+)
 from .rpc import JsonRpc
 
 log = logging.getLogger("bellwether.onchain")
@@ -42,7 +49,8 @@ class OrderFilledListener:
         self.rpc = rpc or JsonRpc()
         self.version = version
         self.abi = ORDER_FILLED_V2 if version == "v2" else ORDER_FILLED_V1
-        self.topic0 = event_topic0(self.abi)
+        # V2 topic0 is the live-verified constant (authoritative, not re-derived).
+        self.topic0 = order_filled_topic0(version)
         if addresses is not None:
             self.addresses = addresses
         elif version == "v2":
@@ -59,6 +67,18 @@ class OrderFilledListener:
     def _rows_from_logs(self, logs: list[dict]) -> list[dict]:
         rows: list[dict] = []
         for lg in logs:
+            if self.version == "v2":
+                # Correctness gate: validate against the live-verified V2 shape and
+                # log-and-skip anything that isn't one, rather than decode garbage.
+                # V2 fill->row normalization (side/tokenId semantics) is finalized in
+                # the on-chain backfill goal; this listener validates + decodes only.
+                try:
+                    assert_v2_order_filled_log(lg["topics"], lg["data"])
+                except V2OrderFilledError as e:
+                    log.warning("skipping invalid V2 OrderFilled log: %s", e)
+                    continue
+                decode_log(self.abi, lg["topics"], lg["data"])  # decodes to 10 fields
+                continue
             decoded = decode_log(self.abi, lg["topics"], lg["data"])
             bn = int(lg["blockNumber"], 16)
             ts = block_ts_to_dt(self._block_ts(bn))
