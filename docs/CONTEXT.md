@@ -45,16 +45,56 @@ on-chain listener **never signs or submits a transaction**.
 | Item | State |
 |---|---|
 | Branch (develop here only) | `claude/prediction-market-tracking-study-oakly7` |
-| Latest commit | `e07a534` — "Feasible strategy templates: persistence + capacity proxy + boxplots" |
+| Latest commit | `a2b215f` — "Seed co-trading candidate pool + fix two latent bulk-load bugs" |
 | Tests | **53** collected — 52 pure (no DB) + 1 DB-integration (runs only when `DATABASE_URL` set). All green. |
 | Lint | `ruff` clean across both Python packages |
-| Working tree | clean (before this file) |
 | Migrations | `0001` → `0004` (latest adds `trade.block_number`) |
 | Phases built | Phase 0–3 fully; Phase 3.5 strategy-detection layer; on-chain decoder + block-gap guard (unit-tested, not yet run live) |
-| Biggest gap | **No real end-to-end run yet** — everything on-chain is synthetic/unit-tested because the hosted sandbox blocked all Polygon RPCs. This is Goal 4, and the local VM unblocks it. |
+| **First real run** | **Done (REST).** Seed co-trading pool built + verified against live Polymarket; archetype + null-model copy-chain runs produced real findings (below). |
+| Biggest gap | **On-chain block-gap guard + resolution depth.** The statistical (null-model) copy-chain guard has run on real data; the *second* guard (on-chain block-gap) and deeper history still need the block_number backfill (Goal 4 / `contracts.py`). |
 
 Work has been done as a sequence of numbered "Prompts" (P1–P16) plus several
 `/goal` directives. All are complete and committed (see `git log --oneline`).
+
+### 2a. First real run — seed co-trading pool (REST) & first findings
+
+Built the first real candidate pool and ran the copy-chain-half of the analytics
+on live data (scripts: `seed_cotrading_pool.py`, `finalize_pool.py`,
+`overlap_report.py`, `archetype_report.py`, `copychain_report.py`).
+
+- **Pool:** 768 co-trading wallets (701 with ≥50 trades), **1.67M trades**,
+  470k position events. Seeded from recurring co-trading sources (crypto
+  up/down families + holders/traders of recent resolved markets), *not* a random
+  volume cut. Gamma `/leaderboard` is gone; seeded from the live `/trades` feed.
+- **Overlap gate PASSED:** **96.9%** of the pool has ≥3 shared-market neighbors
+  (196k pairs share ≥3 markets) — dense and recurring, the right shape for
+  copy-chain detection, not a diffuse set.
+- **Archetype distribution:** accumulator 40% · scalper 34% · mixed 12% ·
+  market_maker 7% · arbitrageur 7% · hold_to_resolution 1%. Median 80 trades/day,
+  net_direction 0.92 (directional, *not* two-sided market-making).
+- **Null-model copy-chains (first of two guards):** in `eth-updown-5m` alone,
+  **2,235 (leader→follower) pairs survived the permutation null model** (top pair
+  1072 follows vs 254 null, p<0.001). Real lead-lag structure exists. Caveat:
+  several top pairs are **bidirectional** (mutual co-reaction / shared signal,
+  not confirmed one-way copying) — the on-chain block-gap guard is what
+  disambiguates, and it's pending the block_number backfill.
+
+**Two caveats that shape the next steps:**
+1. **REST captures only the last ~3,500 trades/wallet** — for these
+   high-frequency wallets that's the last few *hours*, so most markets are too
+   recent to be resolved. Resolution linkage is real but thin (816 markets
+   resolved via CLOB + Gamma anchors; 287k/1.67M trades scoreable). The
+   **profitability run should wait** for a wider resolution window (CLOB is fast;
+   or let markets settle) — a ranking off hours of data is where luck masquerades
+   as edge.
+2. **The 4GB sandbox OOMs the whole-pool pandas loads** (`tt strategy
+   classify/leadlag`). The report scripts above work around it by batching
+   per-wallet (archetype) or scoping to one family (copy-chains). The full
+   cross-wallet copy-chain run over all families wants the larger local VM.
+
+Two latent bulk-load bugs were fixed en route (both bite any real full-history
+load): `repo.py` chunks inserts under asyncpg's 32767-param cap; `loader.py`
+resolves markets in deterministic order so concurrent wallet loads don't deadlock.
 
 ---
 
