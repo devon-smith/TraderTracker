@@ -61,6 +61,7 @@ EXTERNAL_FACT_CATEGORIES = ("politics", "economics", "sports", "crypto", "entert
 PREDICTOR = "predictor"
 MOMENTUM_RIDER = "momentum_rider"
 FAVORITE_FARMER = "favorite_farmer"
+LONGSHOT = "longshot"
 
 
 @dataclass
@@ -68,9 +69,10 @@ class SkillConfig:
     min_markets: int = 10          # eligibility: distinct resolved markets in category
     n_periods: int = 3             # persistence sub-periods
     persistence_min: float = 0.5   # "most" sub-periods net-positive (strictly greater)
-    predictor_max_entry: float = 0.65   # median entry below this => predictor
+    predictor_min_entry: float = 0.15   # below this => longshot/dust (no forecasting edge)
+    predictor_max_entry: float = 0.65   # median entry in [min,max) => predictor
     farmer_min_entry: float = 0.85      # median entry at/above this => favorite-farmer
-    skill_alpha: float = 0.05      # predictor beat-the-market significance
+    skill_alpha: float = 0.05      # FDR q for the significance gate (Benjamini-Hochberg)
     info_max_entry: float = 0.5    # predictor entering below this leans INFORMATION
     null_draws: int = 40           # market-calibrated null resamples
 
@@ -97,9 +99,11 @@ def exclude_latency(trades: pd.DataFrame) -> pd.DataFrame:
 
 
 def _position_frame(trades: pd.DataFrame, config: SkillConfig) -> pd.DataFrame:
-    """One row per resolved, net-long (account, market, outcome) position, carrying
-    entry price (= the market's implied probability at entry), the settled outcome,
-    realized P&L, capital, category, family, and timing. Latency families removed."""
+    """One row per resolved (account, market) — the account's DOMINANT position (the
+    outcome it committed the most capital to) — carrying entry price (= the market's
+    implied probability at entry), the settled outcome, realized P&L, capital,
+    category, family, and timing. Collapsing to the dominant bet drops dust/hedge
+    positions that would otherwise pull the median entry toward 0. Latency removed."""
     t = exclude_latency(trades)
     settle = position_settlements(t)
     if settle.empty:
@@ -107,6 +111,8 @@ def _position_frame(trades: pd.DataFrame, config: SkillConfig) -> pd.DataFrame:
     settle = settle[settle["net_shares"] > 0].copy()
     if settle.empty:
         return pd.DataFrame()
+    # one row per (wallet, market): the outcome with the most capital committed
+    settle = settle.sort_values("buy_cost").groupby(["wallet", "market"], as_index=False).tail(1)
     settle["entry_price"] = (settle["net_cost"] / settle["net_shares"]).clip(1e-6, 1 - 1e-6)
     settle["won"] = settle["payout"].astype(float)
 
@@ -134,7 +140,38 @@ def _classify_type(median_entry: float, config: SkillConfig) -> str:
         return FAVORITE_FARMER
     if median_entry >= config.predictor_max_entry:
         return MOMENTUM_RIDER
-    return PREDICTOR
+    if median_entry >= config.predictor_min_entry:
+        return PREDICTOR
+    return LONGSHOT  # sub-0.15 median: longshot/dust farming, not a forecasting edge
+
+
+def _pnl_z(sub: pd.DataFrame) -> tuple[float, float]:
+    """One-sided test that realized P&L beats the market-calibrated null (outcomes ~
+    Bernoulli(entry_price), i.e. random entry at the same prices). Under that null a
+    position's P&L has mean 0 and variance net_shares^2 * p(1-p). Returns (z, p).
+    This is the 'better than random entry into moving markets' test for momentum."""
+    p = sub["entry_price"].to_numpy(dtype=float)
+    ns = sub["net_shares"].to_numpy(dtype=float)
+    var = float(np.sum(ns * ns * p * (1.0 - p)))
+    if var <= 0:
+        return 0.0, 1.0
+    z = float(sub["realized_pnl"].sum()) / math.sqrt(var)
+    return z, 1.0 - _phi(z)
+
+
+def _bh_reject(pvals: list[float], q: float) -> list[bool]:
+    """Benjamini-Hochberg FDR: reject the largest set with p_(k) <= (k/m) q. Controls
+    false discoveries across the many per-account tests, so a no-skill null yields ~0
+    survivors instead of the ~q*m false positives a raw per-account threshold gives."""
+    m = len(pvals)
+    if m == 0:
+        return []
+    order = sorted(range(m), key=lambda i: pvals[i])
+    cut = -1.0
+    for rank, i in enumerate(order, start=1):
+        if pvals[i] <= (rank / m) * q:
+            cut = pvals[i]
+    return [p <= cut for p in pvals]
 
 
 def _persistence(sub: pd.DataFrame, config: SkillConfig) -> float:
@@ -171,8 +208,10 @@ def _predictor_skill(sub: pd.DataFrame) -> tuple[float, float]:
 
 def _funnel_rows(pos: pd.DataFrame, config: SkillConfig, rng: Optional[np.random.Generator] = None):
     """Run the eligibility -> persistence -> type -> skill funnel over every
-    (wallet, category) group. If `rng` is given, outcomes are redrawn from
-    Bernoulli(entry_price) first — the market-calibrated no-skill null."""
+    (wallet, category) group, then apply a Benjamini-Hochberg FDR gate across the
+    tested accounts so a no-skill null does not manufacture survivors. If `rng` is
+    given, outcomes are redrawn from Bernoulli(entry_price) first — the
+    market-calibrated no-skill null."""
     if pos.empty:
         return []
     work = pos
@@ -193,46 +232,50 @@ def _funnel_rows(pos: pd.DataFrame, config: SkillConfig, rng: Optional[np.random
         persistence = _persistence(sub, config)
         persistence_pass = persistence > config.persistence_min
         stype = _classify_type(median_entry, config)
-        z, pval = _predictor_skill(sub)
 
-        drop_reason = ""
-        if stype == FAVORITE_FARMER:
-            skill_pass = False
-            drop_reason = "favorite-farmer (win rate ~ entry-implied; no excess edge)"
-        elif stype == PREDICTOR:
-            skill_pass = bool(pval < config.skill_alpha and realized_pnl > 0)
-            if not skill_pass:
-                drop_reason = f"predictor did not beat market (p={pval:.3f})"
-        else:  # momentum_rider — judged on discipline, not beating the market
-            skill_pass = bool(persistence_pass and roi > 0 and realized_pnl > 0)
-            if not skill_pass:
-                drop_reason = "momentum-rider without persistent positive ROI"
+        # type-appropriate skill statistic
+        if stype == PREDICTOR:
+            skill_test = "binomial_vs_entry"          # beat the entry-price-implied win rate
+            z, pval = _predictor_skill(sub)
+        elif stype == MOMENTUM_RIDER:
+            skill_test = "pnl_vs_random_entry"         # beat random entry into moving markets
+            z, pval = _pnl_z(sub)
+        else:  # favorite_farmer / longshot — no edge by construction
+            skill_test, z, pval = "none", float("nan"), 1.0
 
-        if not persistence_pass and drop_reason == "":
-            drop_reason = f"failed persistence ({persistence:.2f} of sub-periods positive)"
-        survived = bool(persistence_pass and skill_pass and stype != FAVORITE_FARMER)
+        # a survivor candidate: a testable type, persistent, and net-positive.
+        candidate = bool(stype in (PREDICTOR, MOMENTUM_RIDER) and persistence_pass and realized_pnl > 0)
 
         mean_frac = float(sub["entry_fraction"].mean(skipna=True)) if "entry_fraction" in sub else float("nan")
         information = stype == PREDICTOR and (
             median_entry < config.info_max_entry or (mean_frac == mean_frac and mean_frac < 0.34)
         )
         rows.append({
-            "wallet": wallet,
-            "category": category,
-            "n_markets": n_markets,
-            "type": stype,
-            "median_entry": median_entry,
-            "persistence": persistence,
-            "persistence_pass": persistence_pass,
-            "skill_z": z,
-            "skill_p": pval,
-            "skill_pass": skill_pass,
-            "realized_pnl": realized_pnl,
-            "roi": roi,
-            "survived": survived,
-            "drop_reason": drop_reason,
+            "wallet": wallet, "category": category, "n_markets": n_markets, "type": stype,
+            "median_entry": median_entry, "persistence": persistence,
+            "persistence_pass": persistence_pass, "skill_test": skill_test, "skill_z": z,
+            "skill_p": pval, "_candidate": candidate, "realized_pnl": realized_pnl, "roi": roi,
             "edge_source_hint": "information" if information else "modeling",
         })
+
+    # FDR across the candidate accounts' type-appropriate p-values.
+    cand_idx = [i for i, r in enumerate(rows) if r["_candidate"]]
+    reject = _bh_reject([rows[i]["skill_p"] for i in cand_idx], config.skill_alpha)
+    passed = {cand_idx[j] for j, ok in enumerate(reject) if ok}
+    for i, r in enumerate(rows):
+        r["skill_pass"] = i in passed
+        r["survived"] = i in passed
+        if r["survived"]:
+            r["drop_reason"] = ""
+        elif r["type"] in (FAVORITE_FARMER, LONGSHOT):
+            r["drop_reason"] = f"{r['type']} (win rate ~ entry-implied; no excess edge)"
+        elif not r["persistence_pass"]:
+            r["drop_reason"] = f"failed persistence ({r['persistence']:.2f} of sub-periods positive)"
+        elif r["realized_pnl"] <= 0:
+            r["drop_reason"] = "net-negative on resolved history"
+        else:
+            r["drop_reason"] = f"did not clear FDR skill gate ({r['skill_test']} p={r['skill_p']:.3f})"
+        del r["_candidate"]
     return rows
 
 
@@ -246,7 +289,7 @@ def rank_strategists(trades: pd.DataFrame, config: Optional[SkillConfig] = None)
     pos = _position_frame(trades, config)
     rows = _funnel_rows(pos, config)
     cols = ["wallet", "category", "n_markets", "type", "median_entry", "persistence",
-            "persistence_pass", "skill_z", "skill_p", "skill_pass", "realized_pnl",
+            "persistence_pass", "skill_test", "skill_z", "skill_p", "skill_pass", "realized_pnl",
             "roi", "survived", "drop_reason", "edge_source_hint"]
     if not rows:
         return pd.DataFrame(columns=cols)

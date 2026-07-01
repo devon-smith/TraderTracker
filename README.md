@@ -87,11 +87,14 @@ strategy run over and over is one row.
 off latency entirely: on markets that resolve against a knowable external fact
 (elections, policy, sports, crypto-event resolution), it funnels accounts through
 eligibility (≥10 distinct resolved markets) → persistence → entry-timing type
-(`predictor` / `momentum_rider` / `favorite_farmer`) → a **type-appropriate skill
-test** (predictors must beat their entry-price-implied win rate at significance;
-momentum-riders on persistence + ROI; favorite-farmers dropped), ranked by P&L and
-% return, with a market-calibrated null control. See
-`docs/EXTERNAL_FACT_STRATEGISTS.md`.
+(`predictor` / `momentum_rider` / `favorite_farmer` / `longshot`) → a
+**type-appropriate skill test** (predictors beat their entry-price-implied win
+rate; momentum-riders beat the random-entry-into-moving-markets null;
+favorite-farmers & longshots dropped) → **Benjamini–Hochberg FDR** so a no-skill
+null yields ~0 survivors, ranked by P&L and % return with a market-calibrated null
+control. A first real run against live Polymarket (655k trades, 219 resolved
+markets) found the visible external-fact "smart money" is **not distinguishable
+from luck** once controls are applied — see `docs/EXTERNAL_FACT_STRATEGISTS.md`.
 
 **Copy-chain detection is guarded two ways** so shared reaction to public news
 isn't mistaken for copying: a within-market timestamp **permutation null model**,
