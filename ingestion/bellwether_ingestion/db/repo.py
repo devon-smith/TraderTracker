@@ -68,31 +68,41 @@ async def upsert_market(session: AsyncSession, platform: str, fields: dict) -> i
     return (await session.execute(stmt)).scalar_one()
 
 
-async def insert_trades(session: AsyncSession, rows: list[dict]) -> int:
-    """Bulk idempotent insert. Returns the number of rows actually inserted."""
+# asyncpg caps a single statement at 32767 bind params; chunk large batches so
+# a full-history backfill (thousands of rows/wallet) doesn't blow the limit.
+_PG_MAX_PARAMS = 32767
+
+
+def _chunk_size(row: dict) -> int:
+    cols = max(1, len(row))
+    return max(1, _PG_MAX_PARAMS // cols)
+
+
+async def _insert_chunked(session: AsyncSession, model, rows: list[dict]) -> int:
     if not rows:
         return 0
-    stmt = (
-        pg_insert(Trade)
-        .values(rows)
-        .on_conflict_do_nothing(index_elements=["dedup_key", "ts"])
-        .returning(Trade.dedup_key)
-    )
-    result = await session.execute(stmt)
-    return len(result.fetchall())
+    size = _chunk_size(rows[0])
+    inserted = 0
+    for i in range(0, len(rows), size):
+        chunk = rows[i : i + size]
+        stmt = (
+            pg_insert(model)
+            .values(chunk)
+            .on_conflict_do_nothing(index_elements=["dedup_key", "ts"])
+            .returning(model.dedup_key)
+        )
+        result = await session.execute(stmt)
+        inserted += len(result.fetchall())
+    return inserted
+
+
+async def insert_trades(session: AsyncSession, rows: list[dict]) -> int:
+    """Bulk idempotent insert. Returns the number of rows actually inserted."""
+    return await _insert_chunked(session, Trade, rows)
 
 
 async def insert_position_events(session: AsyncSession, rows: list[dict]) -> int:
-    if not rows:
-        return 0
-    stmt = (
-        pg_insert(PositionEvent)
-        .values(rows)
-        .on_conflict_do_nothing(index_elements=["dedup_key", "ts"])
-        .returning(PositionEvent.dedup_key)
-    )
-    result = await session.execute(stmt)
-    return len(result.fetchall())
+    return await _insert_chunked(session, PositionEvent, rows)
 
 
 async def market_id_map(session: AsyncSession, platform: str, external_ids: Iterable[str]) -> dict[str, int]:

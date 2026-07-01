@@ -37,7 +37,9 @@ async def _resolve_markets(
 
     slug_map = slug_map or {}
     title_map = title_map or {}
-    ids = list(condition_ids)
+    # Deterministic order so concurrent wallet loads acquire shared market-row
+    # locks in the same sequence — otherwise overlapping updown markets deadlock.
+    ids = sorted(condition_ids)
     fetch = set(ids[:max_markets]) if max_markets is not None else set(ids)
 
     mid_map: dict[str, int] = {}
