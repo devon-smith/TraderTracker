@@ -303,17 +303,25 @@ def category_recon(trades: pd.DataFrame, config: Optional[SkillConfig] = None) -
     of resolved markets, the resolved-market time span, the distribution of
     'how many distinct resolved markets each account traded', how many accounts
     clear eligibility, and a studyable/thin flag. Thin categories (e.g. Spotify/TV)
-    are flagged 'no studyable population' rather than forced."""
+    are flagged 'no studyable population' rather than forced.
+
+    Computed directly from resolved trades (no P&L settlement) so it stays cheap on
+    a large real pool — recon is about counts and spans, not P&L."""
     config = config or SkillConfig()
-    pos = _position_frame(trades, config)
     cols = ["category", "n_resolved_markets", "span_start", "span_end", "n_accounts",
             "max_markets_per_account", "median_markets_per_account", "n_eligible_accounts",
             "studyable", "note"]
-    if pos.empty:
+    if trades.empty:
         return pd.DataFrame(columns=cols)
+    t = exclude_latency(trades).copy()
+    t["resolved_at"] = pd.to_datetime(t["resolved_at"], utc=True, errors="coerce")
+    res = t[t["resolution"].notna() & t["resolved_at"].notna()]
+    if res.empty:
+        return pd.DataFrame(columns=cols)
+    res = res.assign(category=res["category"].fillna("unknown") if "category" in res else "unknown")
 
     rows = []
-    for category, sub in pos.groupby("category"):
+    for category, sub in res.groupby("category"):
         per_acct = sub.groupby("wallet")["market"].nunique()
         n_markets = int(sub["market"].nunique())
         n_eligible = int((per_acct >= config.min_markets).sum())
