@@ -6,6 +6,7 @@ traders' edges are **trackable** (copyable fast enough to matter) or
 is possible); Kalshi as anonymous flow (it isn't); Manifold as a zero-risk
 prototype venue.
 
+- **Start here (context & handoff):** `docs/CONTEXT.md` — full project snapshot
 - **Plan:** `docs/BELLWETHER.md` (canonical) · `SCOPE.md` (lean module↔phase view)
 - **Reconciliation & access notes:** `docs/RECONCILIATION.md`
 - **Contributor guide:** `CLAUDE.md`
