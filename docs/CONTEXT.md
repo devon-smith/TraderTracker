@@ -115,6 +115,7 @@ analytics/    Python pkg `bellwether_analytics` — computation (depends on inge
     core/                 P&L, performance, specialization (HHI), ranking, queries
     candidates/           pool builder, trackability pre-score, walk-forward validation
     strategy/             THE strategy-detection layer (see §6)
+    skill/                external-fact skill ranking (predictor/momentum/farmer funnel + null control)
     experiments/          trackability_real (per-leader empirical copyability)
     kalshi_flow.py, paper_trade.py, wallet_scoring.py, specialization.py
     cli.py                the `tt` CLI (Typer)

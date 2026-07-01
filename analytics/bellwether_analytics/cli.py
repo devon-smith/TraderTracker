@@ -34,6 +34,7 @@ manifold_app = typer.Typer(help="Manifold commands.")
 analyze_app = typer.Typer(help="Analytics over the canonical tables.")
 candidates_app = typer.Typer(help="Candidate pool + validation (Phase 3).")
 strategy_app = typer.Typer(help="Strategy detection (archetypes, templates, copy chains).")
+skill_app = typer.Typer(help="Skill ranking on external-fact markets (predictors vs momentum-riders).")
 db_app = typer.Typer(help="Database commands.")
 app.add_typer(poly, name="poly")
 app.add_typer(kalshi_app, name="kalshi")
@@ -41,6 +42,7 @@ app.add_typer(manifold_app, name="manifold")
 app.add_typer(analyze_app, name="analyze")
 app.add_typer(candidates_app, name="candidates")
 app.add_typer(strategy_app, name="strategy")
+app.add_typer(skill_app, name="skill")
 app.add_typer(db_app, name="db")
 
 console = Console()
@@ -536,6 +538,76 @@ def strategy_leadlag(
                       str(int(r["follow_events"])), f"{r['null_threshold']:.1f}",
                       f"{r['p_value']:.3f}", f"{r['median_gap_seconds']:.0f}s")
     console.print(table)
+
+
+@skill_app.command("recon")
+def skill_recon(platform: str = typer.Option("polymarket")):
+    """Step-0 recon: per external-fact category, the studyable population (resolved
+    markets, time span, markets-per-account distribution). Thin ones are flagged."""
+    from bellwether_analytics.core import load_trades_df
+    from bellwether_analytics.skill import category_recon
+
+    trades = load_trades_df(platform=platform)
+    if trades.empty:
+        console.print("[yellow]No trades loaded.[/yellow]")
+        return
+    recon = category_recon(trades)
+    if recon.empty:
+        console.print("[yellow]No resolved external-fact markets found.[/yellow]")
+        return
+    table = Table(title=f"External-fact studyable population ({platform})")
+    _columns(table, ("Category", "left"), ("Resolved mkts", "right"), ("Accounts", "right"),
+             ("Max/acct", "right"), ("Eligible", "right"), ("Studyable", "left"))
+    for _, r in recon.iterrows():
+        table.add_row(str(r["category"]), str(int(r["n_resolved_markets"])),
+                      str(int(r["n_accounts"])), str(int(r["max_markets_per_account"])),
+                      str(int(r["n_eligible_accounts"])),
+                      "yes" if r["studyable"] else "[dim]no (thin)[/dim]")
+    console.print(table)
+
+
+@skill_app.command("rank")
+def skill_rank(
+    platform: str = typer.Option("polymarket"),
+    min_markets: int = typer.Option(10, help="Distinct resolved markets for eligibility"),
+    null: bool = typer.Option(True, help="Also run the market-calibrated no-skill null control"),
+):
+    """Funnel accounts (eligibility -> persistence -> type -> skill test) and rank
+    surviving predictors / momentum-riders by P&L and % return."""
+    from bellwether_analytics.core import load_trades_df
+    from bellwether_analytics.skill import (
+        SkillConfig,
+        null_control,
+        rank_strategists,
+        rank_within_type,
+    )
+
+    trades = load_trades_df(platform=platform)
+    if trades.empty:
+        console.print("[yellow]No trades loaded.[/yellow]")
+        return
+    cfg = SkillConfig(min_markets=min_markets)
+    survivors = rank_within_type(rank_strategists(trades, cfg))
+    if survivors.empty:
+        console.print("[yellow]No accounts survived the eligibility -> persistence -> "
+                      "skill funnel.[/yellow]")
+    else:
+        table = Table(title=f"Skilled external-fact strategists ({platform})")
+        _columns(table, ("Type", "left"), ("Wallet", "left"), ("Mkts", "right"),
+                 ("Persist", "right"), ("Skill p", "right"), ("P&L", "right"),
+                 ("Return", "right"), ("Edge hint", "left"))
+        for _, r in survivors.iterrows():
+            table.add_row(str(r["type"]), str(r["wallet"])[:12] + "…", str(int(r["n_markets"])),
+                          f"{r['persistence']:.2f}", f"{r['skill_p']:.3f}",
+                          f"{r['realized_pnl']:,.0f}", f"{r['roi']:.0%}", str(r["edge_source_hint"]))
+        console.print(table)
+    if null:
+        out = null_control(trades, cfg)
+        console.print(f"[dim]null control — real survivors {out['real_survivors']} vs "
+                      f"no-skill null mean {out['null_survivors_mean']:.2f} "
+                      f"(max {out['null_survivors_max']}); "
+                      f"predictors beat market {out['real_predictors_beat_market']} vs "
+                      f"null {out['null_predictors_beat_market_mean']:.2f}[/dim]")
 
 
 @db_app.command("init")

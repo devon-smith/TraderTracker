@@ -66,6 +66,10 @@ tt strategy leadlag   --platform polymarket               # copy chains (null-mo
 tt strategy copychains --platform polymarket              # null model + on-chain block-gap + verdict
 tt strategy profitability 2026-03-01 --platform polymarket  # templates ranked by out-of-sample P&L
 
+# 4. skilled strategists on EXTERNAL-FACT markets (elections/sports/policy; excludes updown)
+tt skill recon --platform polymarket                      # studyable population per category
+tt skill rank  --platform polymarket --min-markets 10     # predictors vs momentum-riders, null-controlled
+
 # legacy in-memory helpers
 tt poly paper 0x... --slippage-bps 200                # paper-trade backtest
 tt kalshi flow --top 20                               # anonymous Kalshi flow
@@ -78,6 +82,16 @@ explainable archetype (`market_maker` / `scalper` / `accumulator` /
 templates run across accounts → lead-lag copy chains. Market families collapse the
 variable suffix of a slug (`btc-updown-5m-<ts>` → `btc-updown-5m`) so the same
 strategy run over and over is one row.
+
+**Skill ranking on external-fact markets** (`bellwether_analytics.skill`) pivots
+off latency entirely: on markets that resolve against a knowable external fact
+(elections, policy, sports, crypto-event resolution), it funnels accounts through
+eligibility (≥10 distinct resolved markets) → persistence → entry-timing type
+(`predictor` / `momentum_rider` / `favorite_farmer`) → a **type-appropriate skill
+test** (predictors must beat their entry-price-implied win rate at significance;
+momentum-riders on persistence + ROI; favorite-farmers dropped), ranked by P&L and
+% return, with a market-calibrated null control. See
+`docs/EXTERNAL_FACT_STRATEGISTS.md`.
 
 **Copy-chain detection is guarded two ways** so shared reaction to public news
 isn't mistaken for copying: a within-market timestamp **permutation null model**,
