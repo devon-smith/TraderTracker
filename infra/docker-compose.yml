@@ -3,6 +3,9 @@
 services:
   db:
     image: timescale/timescaledb:latest-pg16
+    # Persistent DB: come back on its own after a reboot/resize or crash, so a
+    # long unattended backfill doesn't die against a DB that stayed stopped.
+    restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bellwether}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bellwether}
