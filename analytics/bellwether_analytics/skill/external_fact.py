@@ -383,3 +383,77 @@ def category_recon(trades: pd.DataFrame, config: Optional[SkillConfig] = None) -
             "note": note,
         })
     return pd.DataFrame(rows)[cols].sort_values("n_resolved_markets", ascending=False).reset_index(drop=True)
+
+
+# ---- Test-facing compatibility API (array-level) ----
+# Bridges the low-level names test_skill.py imports to the funnel internals.
+# beat_market_p / predictor_skilled / classify_by_entry adapt existing logic;
+# calibrated_null_counts (correct Bernoulli null) and permuted_null_counts
+# (the WRONG label-permutation null, kept ONLY to prove it inflates) back the
+# anti-regression tests.
+
+def beat_market_p(entry_prices, outcomes):
+    """Poisson-binomial one-sided test at the array level.
+    Returns (observed_wins, expected_wins, p_value)."""
+    p = np.asarray(entry_prices, dtype=float)
+    y = np.asarray(outcomes, dtype=float)
+    obs = float(y.sum())
+    exp = float(p.sum())
+    var = float(np.sum(p * (1.0 - p)))
+    if var <= 0:
+        return obs, exp, 1.0
+    z = (obs - exp) / math.sqrt(var)
+    return obs, exp, 1.0 - _phi(z)
+
+
+def predictor_skilled(entry_prices, outcomes, sig=0.05):
+    """True iff the account beats its entry-implied win rate at significance `sig`."""
+    _obs, _exp, pval = beat_market_p(entry_prices, outcomes)
+    return pval < sig
+
+
+def classify_by_entry(entry_prices, config=None):
+    """Classify by MEDIAN entry price into predictor / momentum_rider /
+    favorite_farmer / longshot, using the funnel thresholds."""
+    config = config or SkillConfig()
+    median_entry = float(np.median(np.asarray(entry_prices, dtype=float)))
+    return _classify_type(median_entry, config)
+
+
+def calibrated_null_counts(accounts, n_sims=40, seed=0, sig=0.05):
+    """CORRECT market-calibrated null: redraw each account's outcomes from
+    Bernoulli(entry_price) and count beat-market passes. Per-sim counts."""
+    rng = np.random.default_rng(seed)
+    accs = [np.asarray(a, dtype=float) for a in accounts]
+    counts = []
+    for _ in range(n_sims):
+        c = 0
+        for p in accs:
+            y = rng.binomial(1, p).astype(float)
+            if beat_market_p(p, y)[2] < sig:
+                c += 1
+        counts.append(c)
+    return counts
+
+
+def permuted_null_counts(pairs, n_sims=40, seed=0, sig=0.05):
+    """WRONG null (kept only to demonstrate it inflates): pool all realized
+    outcomes and permute across positions, imposing the pool's MARGINAL win rate
+    instead of each position's entry price. `pairs` = list of
+    (entry_prices, realized_outcomes). Per-sim counts."""
+    rng = np.random.default_rng(seed)
+    entries = [np.asarray(e, dtype=float) for e, _ in pairs]
+    all_outcomes = np.concatenate([np.asarray(o, dtype=float) for _, o in pairs])
+    counts = []
+    for _ in range(n_sims):
+        pool = rng.permutation(all_outcomes)
+        c = 0
+        idx = 0
+        for p in entries:
+            k = len(p)
+            y = pool[idx:idx + k]
+            idx += k
+            if beat_market_p(p, y)[2] < sig:
+                c += 1
+        counts.append(c)
+    return counts

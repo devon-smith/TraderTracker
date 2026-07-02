@@ -8,6 +8,11 @@ logic — this is analysis on a new, latency-excluded pool.
 """
 
 from .external_fact import (
+    beat_market_p,
+    calibrated_null_counts,
+    classify_by_entry,
+    permuted_null_counts,
+    predictor_skilled,
     EXTERNAL_FACT_CATEGORIES,
     FAVORITE_FARMER,
     LATENCY_MARKERS,
@@ -23,6 +28,11 @@ from .external_fact import (
 )
 
 __all__ = [
+    "beat_market_p",
+    "calibrated_null_counts",
+    "classify_by_entry",
+    "permuted_null_counts",
+    "predictor_skilled",
     "SkillConfig",
     "EXTERNAL_FACT_CATEGORIES",
     "LATENCY_MARKERS",
