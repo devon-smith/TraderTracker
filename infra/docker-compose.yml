@@ -6,6 +6,9 @@ services:
     # Persistent DB: come back on its own after a reboot/resize or crash, so a
     # long unattended backfill doesn't die against a DB that stayed stopped.
     restart: unless-stopped
+    # Docker defaults /dev/shm to 64MB; parallel hash aggregates over the multi-million
+    # -row trade table overflow it ("No space left on device"). Give Postgres room.
+    shm_size: "1gb"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-bellwether}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bellwether}
